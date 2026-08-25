@@ -1,0 +1,280 @@
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { ChevronDown, MapPin, Star, Leaf, Flame, Phone, Clock, Navigation } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+
+// 1. SUPABASE CLIENT
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = (globalThis as any).supabaseClient ?? createClient(supabaseUrl, supabaseKey);
+if (process.env.NODE_ENV !== 'production') {
+  (globalThis as any).supabaseClient = supabase;
+}
+
+// 2. TYPES
+type Category = { id: string; name: string; img?: string | null; };
+type Dish = { id: string; name: string; desc: string; price: number; img: string; available: boolean; category_id: string; popular: boolean; is_veg?: boolean };
+
+// 3. MAIN UI COMPONENT
+export default function ManohaaFoodPlaza() {
+  const [activeCat, setActiveCat] = useState("all");
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [menuItems, setMenuItems] = useState<Dish[]>([]);
+
+  // FETCH DATA
+  useEffect(() => {
+    const fetchData = async () => {
+      const [catsRes, itemsRes] = await Promise.all([
+        supabase.from('categories').select('*').order('created_at', { ascending: true }),
+        supabase.from('menu_items').select('*').eq('available', true).order('created_at', { ascending: true })
+      ]);
+      if (catsRes.data) setCategories(catsRes.data);
+      if (itemsRes.data) setMenuItems(itemsRes.data);
+    };
+    fetchData();
+  }, []);
+
+  const displayItems = useMemo(() => {
+    if (activeCat === "all") return menuItems;
+    return menuItems.filter(item => item.category_id === activeCat);
+  }, [activeCat, menuItems]);
+
+  const popularItems = useMemo(() => displayItems.filter(i => i.popular), [displayItems]);
+  const otherItems = useMemo(() => displayItems.filter(i => !i.popular), [displayItems]);
+
+  const scrollToMenu = () => {
+    document.getElementById('detailed-menu')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const scrollToLocation = () => {
+    document.getElementById('location-section')?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const DetailedMenuCard = ({ item }: { item: Dish }) => (
+    <motion.div 
+      layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} whileHover={{ y: -4 }}
+      className="group relative bg-white/75 backdrop-blur-md rounded-4xl p-4 shadow-sm hover:shadow-2xl border border-white/80 flex flex-col transition-all duration-300 overflow-hidden"
+    >
+      <div className="relative h-56 w-full rounded-2xl overflow-hidden mb-4 shadow-inner">
+        <img src={item.img} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" />
+        <div className="absolute inset-0 bg-linear-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        {item.popular && (
+          <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md text-[#E07A5F] text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow-md tracking-wider uppercase flex items-center gap-1">
+            <Flame className="w-3 h-3" /> Bestseller
+          </span>
+        )}
+        <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-md px-1.5 py-1.5 rounded-md shadow-sm">
+          <div className={`w-3.5 h-3.5 border-2 ${item.is_veg ? 'border-green-600' : 'border-red-600'} flex items-center justify-center rounded-sm`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${item.is_veg ? 'bg-green-600' : 'bg-red-600'}`} />
+          </div>
+        </div>
+      </div>
+      
+      <div className="flex justify-between items-start mb-2 px-1">
+        <h3 className="font-bold text-xl text-gray-900 tracking-tight leading-tight pr-4">{item.name}</h3>
+        <span className="font-extrabold text-xl text-[#E07A5F]">₹{item.price}</span>
+      </div>
+      <div className="flex items-center gap-3 px-1 mb-3 text-xs font-semibold text-gray-500">
+        <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-0.5 rounded-md border border-green-100">
+          <Star className="w-3 h-3 fill-green-600 text-green-600" /> 4.5
+        </span>
+      </div>
+      <p className="text-sm text-gray-500 leading-relaxed mb-2 px-1 line-clamp-2">{item.desc}</p>
+    </motion.div>
+  );
+
+  return (
+    <div className="min-h-screen font-sans bg-[#F2F2F2]">
+      
+      {/* 1. CRYSTAL CLEAR HERO SECTION */}
+      <section className="relative h-screen min-h-175 flex flex-col justify-between overflow-hidden bg-black">
+        
+        <div className="absolute inset-0 z-0">
+          <img src="/exterior.webp" alt="Manohaa Food Plaza" className="w-full h-full object-cover" />
+          <div className="absolute inset-0 bg-black/40" />
+          <div className="absolute bottom-0 left-0 right-0 h-24 bg-linear-to-t from-[#F2F2F2] to-transparent" />
+        </div>
+
+        {/* LOGO AREA - FOOD PLAZA TEXT SET TO RED */}
+        <nav className="relative z-10 w-full pt-8 px-6 flex flex-col items-center justify-center">
+          <div className="flex items-center justify-center gap-3 drop-shadow-2xl">
+            <img 
+              src="/logo.png" 
+              alt="S4 Manohaa" 
+              className="h-12 sm:h-16 w-auto object-contain filter brightness-125" 
+              style={{ mixBlendMode: 'screen' }}
+            />
+            <span className="text-3xl sm:text-5xl font-serif text-red-600 tracking-widest uppercase font-bold drop-shadow-lg">
+              FOOD PLAZA
+            </span>
+          </div>
+        </nav>
+
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-4 text-center mt-[-5vh]">
+          <h2 className="text-4xl sm:text-5xl md:text-7xl font-serif mb-6 leading-tight max-w-4xl text-white drop-shadow-md">
+            The Ultimate Highway <br className="hidden sm:block" /> Culinary Retreat
+          </h2>
+          <p className="max-w-xl text-base sm:text-lg text-white/90 mb-10 leading-relaxed drop-shadow">
+            Refresh, recharge, and relish the finest flavors. Experience a premium dining atmosphere designed for the modern traveler.
+          </p>
+
+          <div className="flex flex-col w-full max-w-sm sm:max-w-md gap-4 px-4 sm:px-0">
+            <button onClick={scrollToMenu} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3">
+              Explore Menu <ChevronDown className="w-6 h-6" />
+            </button>
+            <button onClick={scrollToLocation} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3">
+              Get Directions <MapPin className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {/* 2. THE MENU */}
+      <section id="detailed-menu" className="relative z-20 pb-24 min-h-screen text-black">
+        
+        <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden bg-[#F2F2F2]">
+          <img src="/interior.webp" alt="Interior Vibe" className="w-full h-full object-cover fixed top-0 opacity-[0.16]" />
+        </div>
+
+        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pt-12">
+          
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2">Our Culinary Offerings</h2>
+            <p className="text-gray-500 text-sm font-medium">Thoughtfully crafted for the ultimate dining experience.</p>
+          </div>
+          
+          <div className="flex justify-center flex-wrap gap-3 pb-8 mb-8 border-b border-gray-900/10">
+            <button onClick={() => setActiveCat("all")} className={`px-7 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === "all" ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>
+              All Delights
+            </button>
+            {categories.map(cat => (
+              <button key={cat.id} onClick={() => setActiveCat(cat.id)} className={`flex items-center gap-2 pr-6 pl-2 py-2 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === cat.id ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>
+                {cat.img ? <img src={cat.img} alt={cat.name} className="w-9 h-9 rounded-xl object-cover shadow-sm" /> : <div className="w-9 h-9 rounded-xl bg-gray-200" />}
+                {cat.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-col gap-12">
+            {popularItems.length > 0 && (
+              <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 sm:p-8 border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
+                <h2 className="text-2xl font-serif font-extrabold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="bg-[#E07A5F]/10 p-2 rounded-full text-[#E07A5F]"><Flame className="w-6 h-6" /></span> 
+                  Signature Bestsellers
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <AnimatePresence>
+                    {popularItems.map(item => <DetailedMenuCard key={item.id} item={item} />)}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+            {otherItems.length > 0 && (
+              <div className="px-2">
+                <h2 className="text-2xl font-serif font-extrabold text-gray-900 mb-6 flex items-center gap-3">
+                  <span className="bg-gray-900/5 p-2 rounded-full text-gray-900"><Leaf className="w-5 h-5" /></span>
+                  Explore More
+                </h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  <AnimatePresence>
+                    {otherItems.map(item => <DetailedMenuCard key={item.id} item={item} />)}
+                  </AnimatePresence>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* 3. MAPS & CONTACT SECTION */}
+      <section id="location-section" className="relative z-20 bg-[#121214] text-white py-20 px-4 sm:px-6">
+        <div className="max-w-6xl mx-auto">
+          
+          <div className="text-center mb-12">
+            <p className="text-[0.68rem] uppercase tracking-[0.35em] text-[#E07A5F] mb-2 font-bold">Visit Our Location</p>
+            <h2 className="font-serif text-3xl sm:text-4xl text-white tracking-tight">Find S4 Manohaa Food Plaza</h2>
+            <p className="text-gray-400 text-sm mt-2">Conveniently located on the highway for travelers and families.</p>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
+            
+            {/* Contact & Info Card */}
+            <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 flex flex-col justify-between shadow-2xl">
+              <div>
+                <h3 className="font-serif text-2xl text-white mb-6">Get in Touch</h3>
+                
+                <div className="space-y-6">
+                  {/* Phone number */}
+                  <a href="tel:09581101223" className="flex items-center gap-4 group">
+                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 group-hover:bg-[#E07A5F] transition-colors">
+                      <Phone className="w-5 h-5 text-[#E07A5F] group-hover:text-black transition-colors" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Call Us</p>
+                      <p className="text-lg font-bold text-white group-hover:text-[#E07A5F] transition-colors">095811 01223</p>
+                    </div>
+                  </a>
+
+                  {/* Location Address */}
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 mt-1">
+                      <MapPin className="w-5 h-5 text-[#E07A5F]" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Location</p>
+                      <p className="text-sm font-medium text-white leading-relaxed mt-0.5">
+                        Near NH 44, Manoharabad / Medak Region, Telangana
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Hours */}
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 mt-1">
+                      <Clock className="w-5 h-5 text-[#E07A5F]" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-gray-400 uppercase tracking-wider">Operating Hours</p>
+                      <p className="text-sm font-medium text-white leading-relaxed mt-0.5">
+                        Open Daily • 6:00 AM – 11:30 PM
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Navigation Button */}
+              <div className="mt-8 pt-6 border-t border-white/10">
+                <a 
+                  href="https://maps.google.com/?q=Manoharabad+Medak" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="w-full py-4 rounded-2xl bg-[#E07A5F] text-black font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-white transition-all shadow-lg"
+                >
+                  <Navigation className="w-4 h-4" /> Open in Google Maps
+                </a>
+              </div>
+            </div>
+
+            {/* Custom Satellite Map Screenshot Image */}
+            <div className="lg:col-span-2 h-[400px] lg:h-auto rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative group">
+              <img 
+                src="/map-location.jpg" 
+                alt="S4 Manohaa Food Plaza Location Map" 
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+              />
+              <div className="absolute inset-0 bg-black/10 pointer-events-none" />
+              <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 text-xs font-semibold text-white shadow-xl flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-[#E07A5F]" /> S4 Manohaa Food Plaza, NH 44, Manoharabad
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </section>
+
+      <style dangerouslySetInnerHTML={{__html: `html { scroll-behavior: smooth; }`}} />
+    </div>
+  );
+}
