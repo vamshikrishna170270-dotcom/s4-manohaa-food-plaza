@@ -1,4 +1,5 @@
 'use client';
+
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, MapPin, Star, Leaf, Flame, Phone, Clock, Navigation } from 'lucide-react';
@@ -21,6 +22,16 @@ export default function ManohaaFoodPlaza() {
   const [activeCat, setActiveCat] = useState("all");
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<Dish[]>([]);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  // TRACK SCROLL FOR STICKY HEADER
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 50);
+    };
+    window.addEventListener('scroll', handleScroll);
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   // FETCH DATA
   useEffect(() => {
@@ -54,13 +65,13 @@ export default function ManohaaFoodPlaza() {
   const DetailedMenuCard = ({ item }: { item: Dish }) => (
     <motion.div 
       layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} whileHover={{ y: -4 }}
-      className="group relative bg-white/75 backdrop-blur-md rounded-4xl p-4 shadow-sm hover:shadow-2xl border border-white/80 flex flex-col transition-all duration-300 overflow-hidden"
+      className="group relative bg-white/80 backdrop-blur-xl rounded-[2rem] p-4 shadow-sm hover:shadow-2xl border border-white flex flex-col transition-all duration-300 overflow-hidden"
     >
       <div className="relative h-56 w-full rounded-2xl overflow-hidden mb-4 shadow-inner">
         <img src={item.img} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" />
-        <div className="absolute inset-0 bg-linear-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         {item.popular && (
-          <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md text-[#E07A5F] text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow-md tracking-wider uppercase flex items-center gap-1">
+          <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md text-red-600 text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow-md tracking-wider uppercase flex items-center gap-1">
             <Flame className="w-3 h-3" /> Bestseller
           </span>
         )}
@@ -73,7 +84,7 @@ export default function ManohaaFoodPlaza() {
       
       <div className="flex justify-between items-start mb-2 px-1">
         <h3 className="font-bold text-xl text-gray-900 tracking-tight leading-tight pr-4">{item.name}</h3>
-        <span className="font-extrabold text-xl text-[#E07A5F]">₹{item.price}</span>
+        <span className="font-extrabold text-xl text-red-600">₹{item.price}</span>
       </div>
       <div className="flex items-center gap-3 px-1 mb-3 text-xs font-semibold text-gray-500">
         <span className="flex items-center gap-1 bg-green-50 text-green-700 px-2 py-0.5 rounded-md border border-green-100">
@@ -87,61 +98,84 @@ export default function ManohaaFoodPlaza() {
   return (
     <div className="min-h-screen font-sans bg-[#F2F2F2]">
       
+      {/* SCROLL-TRIGGERED STICKY HEADER (Pure Text Logo) */}
+      <motion.header 
+        initial={{ y: -100, opacity: 0 }}
+        animate={{ y: isScrolled ? 0 : -100, opacity: isScrolled ? 1 : 0 }}
+        transition={{ duration: 0.4, ease: "easeOut" }}
+        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4 bg-[#09090B]/90 backdrop-blur-md border-b border-white/10 shadow-2xl"
+      >
+        <div className="flex items-center gap-2">
+          <span className="font-serif text-2xl font-black text-red-600 tracking-tighter">S4</span>
+          <span className="font-serif text-xl italic text-white pr-2">Manohaa</span>
+          <span className="font-sans text-xs font-bold uppercase tracking-[0.2em] text-red-500 hidden sm:block border-l border-white/20 pl-4">Food Plaza</span>
+        </div>
+        <nav className="flex items-center gap-6">
+          <button onClick={scrollToMenu} className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-colors">Menu</button>
+          <a href="/admin" className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-colors">Admin</a>
+        </nav>
+      </motion.header>
+
       {/* 1. CRYSTAL CLEAR HERO SECTION */}
-      <section className="relative h-screen min-h-175 flex flex-col justify-between overflow-hidden bg-black">
+      <section className="relative h-screen min-h-[600px] flex flex-col justify-between overflow-hidden bg-black">
         
         <div className="absolute inset-0 z-0">
           <img src="/exterior.webp" alt="Manohaa Food Plaza" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/40" />
-          <div className="absolute bottom-0 left-0 right-0 h-24 bg-linear-to-t from-[#F2F2F2] to-transparent" />
+          <div className="absolute inset-0 bg-black/50" />
+          {/* This gradient perfectly blends the hero into the menu section below */}
+          <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#F2F2F2] via-[#F2F2F2]/80 to-transparent" />
         </div>
 
-        {/* LOGO AREA - FOOD PLAZA TEXT SET TO RED */}
-        <nav className="relative z-10 w-full pt-8 px-6 flex flex-col items-center justify-center">
-          <div className="flex items-center justify-center gap-3 drop-shadow-2xl">
-            <img 
-              src="/logo.png" 
-              alt="S4 Manohaa" 
-              className="h-12 sm:h-16 w-auto object-contain filter brightness-125" 
-              style={{ mixBlendMode: 'screen' }}
-            />
-            <span className="text-3xl sm:text-5xl font-serif text-red-600 tracking-widest uppercase font-bold drop-shadow-lg">
-              FOOD PLAZA
+        {/* HIGH-END TYPOGRAPHIC LOGO (Replaces the cheap image) */}
+        <nav className="relative z-10 w-full pt-16 px-6 flex flex-col items-center justify-center">
+          <div className="flex flex-col items-center justify-center">
+            <div className="flex items-baseline gap-2 sm:gap-3 drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]">
+              <span className="text-5xl sm:text-7xl font-serif font-black text-red-600 tracking-tighter">
+                S<span className="text-4xl sm:text-6xl">4</span>
+              </span>
+              <span className="text-5xl sm:text-7xl font-serif italic text-white font-medium">
+                Manohaa
+              </span>
+            </div>
+            <span className="text-2xl sm:text-3xl tracking-[0.3em] sm:tracking-[0.4em] font-sans font-extrabold text-red-600 uppercase mt-2 drop-shadow-[0_4px_8px_rgba(0,0,0,0.9)]">
+              Food Plaza
             </span>
           </div>
         </nav>
 
-        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-4 text-center mt-[-5vh]">
-          <h2 className="text-4xl sm:text-5xl md:text-7xl font-serif mb-6 leading-tight max-w-4xl text-white drop-shadow-md">
+        <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-4 text-center mt-[-8vh]">
+          <h2 className="text-4xl sm:text-5xl md:text-7xl font-serif mb-6 leading-tight max-w-4xl text-white drop-shadow-[0_4px_8px_rgba(0,0,0,0.6)]">
             The Ultimate Highway <br className="hidden sm:block" /> Culinary Retreat
           </h2>
-          <p className="max-w-xl text-base sm:text-lg text-white/90 mb-10 leading-relaxed drop-shadow">
+          <p className="max-w-xl text-base sm:text-lg text-white/90 mb-10 leading-relaxed drop-shadow-md font-medium">
             Refresh, recharge, and relish the finest flavors. Experience a premium dining atmosphere designed for the modern traveler.
           </p>
 
           <div className="flex flex-col w-full max-w-sm sm:max-w-md gap-4 px-4 sm:px-0">
-            <button onClick={scrollToMenu} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3">
+            <button onClick={scrollToMenu} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3 border border-white/10 hover:border-white">
               Explore Menu <ChevronDown className="w-6 h-6" />
             </button>
-            <button onClick={scrollToLocation} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3">
+            <button onClick={scrollToLocation} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3 border border-white/10 hover:border-white">
               Get Directions <MapPin className="w-6 h-6" />
             </button>
           </div>
         </div>
       </section>
 
-      {/* 2. THE MENU */}
-      <section id="detailed-menu" className="relative z-20 pb-24 min-h-screen text-black">
+      {/* 2. THE MENU (With hidden mobile background & zero top gap) */}
+      <section id="detailed-menu" className="relative z-20 pb-24 text-black bg-[#F2F2F2] min-h-screen">
         
-        <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden bg-[#F2F2F2]">
-          <img src="/interior.webp" alt="Interior Vibe" className="w-full h-full object-cover fixed top-0 opacity-[0.16]" />
+        {/* PARALLAX INTERIOR BACKGROUND (Hidden on phones, subtle on desktop) */}
+        <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden hidden sm:block">
+          <div className="absolute inset-0 bg-[#F2F2F2]/90 z-10" /> {/* Whitewash overlay for readability */}
+          <img src="/interior.webp" alt="Interior Background" className="w-full h-full object-cover fixed top-0 opacity-40 mix-blend-multiply" />
         </div>
 
         <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pt-12">
           
           <div className="text-center mb-10">
-            <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2">Our Culinary Offerings</h2>
-            <p className="text-gray-500 text-sm font-medium">Thoughtfully crafted for the ultimate dining experience.</p>
+            <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2 drop-shadow-sm">Our Culinary Offerings</h2>
+            <p className="text-gray-600 text-sm font-medium">Thoughtfully crafted for the ultimate dining experience.</p>
           </div>
           
           <div className="flex justify-center flex-wrap gap-3 pb-8 mb-8 border-b border-gray-900/10">
@@ -158,9 +192,9 @@ export default function ManohaaFoodPlaza() {
 
           <div className="flex flex-col gap-12">
             {popularItems.length > 0 && (
-              <div className="bg-white/60 backdrop-blur-xl rounded-[2.5rem] p-6 sm:p-8 border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
+              <div className="bg-white/50 backdrop-blur-2xl rounded-[2.5rem] p-6 sm:p-8 border border-white shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
                 <h2 className="text-2xl font-serif font-extrabold text-gray-900 mb-6 flex items-center gap-3">
-                  <span className="bg-[#E07A5F]/10 p-2 rounded-full text-[#E07A5F]"><Flame className="w-6 h-6" /></span> 
+                  <span className="bg-red-600/10 p-2 rounded-full text-red-600"><Flame className="w-6 h-6" /></span> 
                   Signature Bestsellers
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
@@ -192,34 +226,31 @@ export default function ManohaaFoodPlaza() {
         <div className="max-w-6xl mx-auto">
           
           <div className="text-center mb-12">
-            <p className="text-[0.68rem] uppercase tracking-[0.35em] text-[#E07A5F] mb-2 font-bold">Visit Our Location</p>
+            <p className="text-[0.68rem] uppercase tracking-[0.35em] text-red-500 mb-2 font-bold">Visit Our Location</p>
             <h2 className="font-serif text-3xl sm:text-4xl text-white tracking-tight">Find S4 Manohaa Food Plaza</h2>
             <p className="text-gray-400 text-sm mt-2">Conveniently located on the highway for travelers and families.</p>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
             
-            {/* Contact & Info Card */}
             <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-3xl p-8 flex flex-col justify-between shadow-2xl">
               <div>
                 <h3 className="font-serif text-2xl text-white mb-6">Get in Touch</h3>
                 
                 <div className="space-y-6">
-                  {/* Phone number */}
                   <a href="tel:09581101223" className="flex items-center gap-4 group">
-                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 group-hover:bg-[#E07A5F] transition-colors">
-                      <Phone className="w-5 h-5 text-[#E07A5F] group-hover:text-black transition-colors" />
+                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0 group-hover:bg-red-600 transition-colors">
+                      <Phone className="w-5 h-5 text-red-500 group-hover:text-white transition-colors" />
                     </div>
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wider">Call Us</p>
-                      <p className="text-lg font-bold text-white group-hover:text-[#E07A5F] transition-colors">095811 01223</p>
+                      <p className="text-lg font-bold text-white group-hover:text-red-400 transition-colors">095811 01223</p>
                     </div>
                   </a>
 
-                  {/* Location Address */}
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 mt-1">
-                      <MapPin className="w-5 h-5 text-[#E07A5F]" />
+                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0 mt-1">
+                      <MapPin className="w-5 h-5 text-red-500" />
                     </div>
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wider">Location</p>
@@ -229,10 +260,9 @@ export default function ManohaaFoodPlaza() {
                     </div>
                   </div>
 
-                  {/* Hours */}
                   <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-[#E07A5F]/10 border border-[#E07A5F]/30 flex items-center justify-center shrink-0 mt-1">
-                      <Clock className="w-5 h-5 text-[#E07A5F]" />
+                    <div className="w-12 h-12 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-center justify-center shrink-0 mt-1">
+                      <Clock className="w-5 h-5 text-red-500" />
                     </div>
                     <div>
                       <p className="text-xs text-gray-400 uppercase tracking-wider">Operating Hours</p>
@@ -244,20 +274,18 @@ export default function ManohaaFoodPlaza() {
                 </div>
               </div>
 
-              {/* Navigation Button */}
               <div className="mt-8 pt-6 border-t border-white/10">
                 <a 
                   href="https://maps.google.com/?q=Manoharabad+Medak" 
                   target="_blank" 
                   rel="noopener noreferrer"
-                  className="w-full py-4 rounded-2xl bg-[#E07A5F] text-black font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-white transition-all shadow-lg"
+                  className="w-full py-4 rounded-2xl bg-red-600 text-white font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-white hover:text-black transition-all shadow-lg"
                 >
                   <Navigation className="w-4 h-4" /> Open in Google Maps
                 </a>
               </div>
             </div>
 
-            {/* Custom Satellite Map Screenshot Image */}
             <div className="lg:col-span-2 h-[400px] lg:h-auto rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative group">
               <img 
                 src="/map-location.jpg" 
@@ -266,7 +294,7 @@ export default function ManohaaFoodPlaza() {
               />
               <div className="absolute inset-0 bg-black/10 pointer-events-none" />
               <div className="absolute bottom-4 left-4 bg-black/80 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 text-xs font-semibold text-white shadow-xl flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#E07A5F]" /> S4 Manohaa Food Plaza, NH 44, Manoharabad
+                <MapPin className="w-4 h-4 text-red-500" /> S4 Manohaa Food Plaza, NH 44, Manoharabad
               </div>
             </div>
 
