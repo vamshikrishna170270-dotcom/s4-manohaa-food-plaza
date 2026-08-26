@@ -54,13 +54,10 @@ export default function ManohaaFoodPlaza() {
   const popularItems = useMemo(() => displayItems.filter(i => i.popular), [displayItems]);
   const otherItems = useMemo(() => displayItems.filter(i => !i.popular), [displayItems]);
 
-  const scrollToMenu = () => {
-    document.getElementById('detailed-menu')?.scrollIntoView({ behavior: 'smooth' });
-  };
-
-  const scrollToLocation = () => {
-    document.getElementById('location-section')?.scrollIntoView({ behavior: 'smooth' });
-  };
+  // SCROLL HANDLERS
+  const scrollToMenu = () => document.getElementById('detailed-menu')?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToStory = () => document.getElementById('our-story')?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToLocation = () => document.getElementById('location-section')?.scrollIntoView({ behavior: 'smooth' });
 
   const DetailedMenuCard = ({ item }: { item: Dish }) => (
     <motion.div 
@@ -96,9 +93,9 @@ export default function ManohaaFoodPlaza() {
   );
 
   return (
-    <div className="min-h-screen font-sans bg-[#F2F2F2]">
+    <div className="min-h-screen font-sans bg-[#09090B]">
       
-      {/* SCROLL-TRIGGERED STICKY HEADER (Pure Text Logo) */}
+      {/* SCROLL-TRIGGERED STICKY HEADER */}
       <motion.header 
         initial={{ y: -100, opacity: 0 }}
         animate={{ y: isScrolled ? 0 : -100, opacity: isScrolled ? 1 : 0 }}
@@ -111,22 +108,22 @@ export default function ManohaaFoodPlaza() {
           <span className="font-sans text-xs font-bold uppercase tracking-[0.2em] text-red-500 hidden sm:block border-l border-white/20 pl-4">Food Plaza</span>
         </div>
         <nav className="flex items-center gap-6">
-          <button onClick={scrollToMenu} className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-colors">Menu</button>
-          <a href="/admin" className="text-xs font-bold uppercase tracking-widest text-gray-300 hover:text-white transition-colors">Admin</a>
+          <button onClick={scrollToMenu} className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white transition-colors">Menu</button>
+          <button onClick={scrollToStory} className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-white transition-colors">Our Story</button>
         </nav>
       </motion.header>
 
-      {/* 1. CRYSTAL CLEAR HERO SECTION */}
+      {/* 1. HERO SECTION */}
       <section className="relative h-screen min-h-[600px] flex flex-col justify-between overflow-hidden bg-black">
         
         <div className="absolute inset-0 z-0">
           <img src="/exterior.webp" alt="Manohaa Food Plaza" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-black/50" />
-          {/* This gradient perfectly blends the hero into the menu section below */}
+          <div className="absolute inset-0 bg-black/60" />
+          {/* Gradients perfectly into the light Menu section */}
           <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[#F2F2F2] via-[#F2F2F2]/80 to-transparent" />
         </div>
 
-        {/* HIGH-END TYPOGRAPHIC LOGO (Replaces the cheap image) */}
+        {/* HIGH-END TYPOGRAPHIC LOGO */}
         <nav className="relative z-10 w-full pt-16 px-6 flex flex-col items-center justify-center">
           <div className="flex flex-col items-center justify-center">
             <div className="flex items-baseline gap-2 sm:gap-3 drop-shadow-[0_4px_10px_rgba(0,0,0,0.8)]">
@@ -152,26 +149,28 @@ export default function ManohaaFoodPlaza() {
           </p>
 
           <div className="flex flex-col w-full max-w-sm sm:max-w-md gap-4 px-4 sm:px-0">
-            <button onClick={scrollToMenu} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3 border border-white/10 hover:border-white">
+            {/* Primary Action */}
+            <button onClick={scrollToMenu} className="w-full bg-[#D4AF37] py-5 sm:py-6 rounded-2xl text-black font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-[0_0_30px_rgba(212,175,55,0.4)] hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3">
               Explore Menu <ChevronDown className="w-6 h-6" />
             </button>
-            <button onClick={scrollToLocation} className="w-full bg-black/70 backdrop-blur-md py-5 sm:py-6 rounded-2xl text-white font-extrabold text-lg sm:text-xl uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3 border border-white/10 hover:border-white">
-              Get Directions <MapPin className="w-6 h-6" />
+            {/* Secondary Action - Explore Restaurant */}
+            <button onClick={scrollToStory} className="w-full bg-black/70 backdrop-blur-md py-4 sm:py-5 rounded-2xl text-white font-bold text-sm sm:text-base uppercase tracking-widest shadow-2xl hover:bg-white hover:text-black transition-all flex items-center justify-center gap-3 border border-white/10 hover:border-white">
+              Explore Restaurant <Navigation className="w-5 h-5" />
             </button>
           </div>
         </div>
       </section>
 
-      {/* 2. THE MENU (With hidden mobile background & zero top gap) */}
-      <section id="detailed-menu" className="relative z-20 pb-24 text-black bg-[#F2F2F2] min-h-screen">
+      {/* 2. THE MENU */}
+      <section id="detailed-menu" className="relative z-20 pb-24 text-black bg-[#F2F2F2] min-h-screen pt-12">
         
-        {/* PARALLAX INTERIOR BACKGROUND (Hidden on phones, subtle on desktop) */}
+        {/* PARALLAX INTERIOR BACKGROUND */}
         <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden hidden sm:block">
-          <div className="absolute inset-0 bg-[#F2F2F2]/90 z-10" /> {/* Whitewash overlay for readability */}
+          <div className="absolute inset-0 bg-[#F2F2F2]/90 z-10" /> 
           <img src="/interior.webp" alt="Interior Background" className="w-full h-full object-cover fixed top-0 opacity-40 mix-blend-multiply" />
         </div>
 
-        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 pt-12">
+        <div className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6">
           
           <div className="text-center mb-10">
             <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2 drop-shadow-sm">Our Culinary Offerings</h2>
@@ -221,7 +220,35 @@ export default function ManohaaFoodPlaza() {
         </div>
       </section>
 
-      {/* 3. MAPS & CONTACT SECTION */}
+      {/* 3. OUR STORY SECTION */}
+      <section id="our-story" className="relative z-20 bg-[#09090B] text-white py-32 px-4 sm:px-6">
+        {/* Smooth transition from the light Menu section into the dark Story section */}
+        <div className="absolute top-0 left-0 right-0 h-32 bg-gradient-to-b from-[#F2F2F2] to-transparent z-10" />
+        
+        {/* Smooth transition from Story into the dark Location section */}
+        <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#121214] to-transparent z-10" />
+        
+        <div className="max-w-4xl mx-auto text-center space-y-8 relative z-20">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true, margin: "-100px" }}
+            transition={{ duration: 0.8, ease: "easeOut" }}
+          >
+            <p className="text-[0.75rem] uppercase tracking-[0.4em] text-red-500 mb-6 font-bold">The Heritage</p>
+            <h2 className="font-serif text-4xl sm:text-5xl text-white tracking-tight mb-8">A Journey of Flavors</h2>
+            <div className="w-12 h-1 bg-[#D4AF37] mx-auto mb-10 rounded-full" />
+            
+            <p className="text-gray-300 text-base sm:text-lg leading-relaxed font-light max-w-3xl mx-auto">
+              Born out of a passion for authentic culinary traditions and a desire to provide travelers with an unforgettable oasis, <strong className="text-white font-serif font-medium text-xl">S4 Manohaa Food Plaza</strong> is more than just a stop on the highway—it is a destination in itself. 
+              <br /><br />
+              We believe that every journey deserves a memorable meal. Our master chefs bring generations of expertise to the table, blending traditional spices with modern techniques to craft dishes that comfort the soul and delight the senses. Whether you are craving the fiery kick of a Hyderabadi Dum Biryani or the soothing warmth of fresh Tandoori breads, you are tasting a piece of our history.
+            </p>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* 4. MAPS & CONTACT SECTION */}
       <section id="location-section" className="relative z-20 bg-[#121214] text-white py-20 px-4 sm:px-6">
         <div className="max-w-6xl mx-auto">
           
