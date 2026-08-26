@@ -4,11 +4,11 @@ import { useState, useMemo, useEffect, useRef, type ReactNode } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { createClient } from '@supabase/supabase-js';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend, AreaChart, Area, LineChart, Line
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend, AreaChart, Area
 } from "recharts";
 import {
   LayoutDashboard, UtensilsCrossed, NotebookPen, Sparkles, Plus, X, UploadCloud, Search,
-  IndianRupee, TrendingUp, Users, Send, Crown, Loader2, Lock, FolderTree, Edit2, Star, CornerDownRight, ShoppingCart, Trash2, Mic, MicOff, Download, FileText, Calendar, BarChart2, Activity
+  IndianRupee, TrendingUp, Users, Send, Crown, Loader2, Lock, FolderTree, Edit2, Star, CornerDownRight, ShoppingCart, Trash2, Mic, MicOff, Download, FileText
 } from "lucide-react";
 
 // SPEECH & EXPORT UTILITIES
@@ -317,49 +317,22 @@ function StructureView({ categories, setCategories, uploadImage }: any) {
   );
 }
 
-// 6. DETAILED OVERVIEW VIEW (WITH DYNAMIC DATE FILTERS)
-// 6. DETAILED OVERVIEW VIEW (WITH CUSTOM DATES & DYNAMIC CHARTS)
+// 6. DETAILED OVERVIEW VIEW
 function OverviewView({ dishes, ledger, categories }: { dishes: Dish[], ledger: LedgerEntry[], categories: Category[] }) {
-  const [dateFilter, setDateFilter] = useState<'today' | '7d' | '30d' | 'all' | 'custom'>('all');
-  const [customStart, setCustomStart] = useState("");
-  const [customEnd, setCustomEnd] = useState("");
-  const [chartType, setChartType] = useState<'area' | 'bar' | 'line'>('area');
-
-  const filteredLedger = useMemo(() => {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    
-    return ledger.filter(entry => {
-      const entryTime = new Date(entry.created_at).getTime();
-      
-      if (dateFilter === 'all') return true;
-      if (dateFilter === 'today') return entryTime >= startOfToday;
-      if (dateFilter === '7d') return entryTime >= now.getTime() - (7 * 24 * 60 * 60 * 1000);
-      if (dateFilter === '30d') return entryTime >= now.getTime() - (30 * 24 * 60 * 60 * 1000);
-      if (dateFilter === 'custom' && customStart && customEnd) {
-        const start = new Date(customStart).getTime();
-        const end = new Date(customEnd);
-        end.setHours(23, 59, 59, 999); // Set to end of the selected day
-        return entryTime >= start && entryTime <= end.getTime();
-      }
-      return true; // Fallback if custom dates aren't fully selected yet
-    });
-  }, [ledger, dateFilter, customStart, customEnd]);
-
-  const totalRevenue = filteredLedger.reduce((acc, curr) => acc + Number(curr.total_price), 0);
-  const totalOrders = filteredLedger.length;
-  const totalItemsSold = filteredLedger.reduce((acc, curr) => acc + curr.quantity, 0);
+  const totalRevenue = ledger.reduce((acc, curr) => acc + Number(curr.total_price), 0);
+  const totalOrders = ledger.length;
+  const totalItemsSold = ledger.reduce((acc, curr) => acc + curr.quantity, 0);
   const avgTicket = totalOrders > 0 ? totalRevenue / totalOrders : 0;
   
   const itemSales: Record<string, number> = {};
-  filteredLedger.forEach(entry => {
+  ledger.forEach(entry => {
     const name = entry.menu_items?.name || "Unknown Item";
     itemSales[name] = (itemSales[name] || 0) + entry.quantity;
   });
   const topItems = Object.entries(itemSales).map(([name, sales]) => ({ name, sales })).sort((a, b) => b.sales - a.sales).slice(0, 6);
 
   const catSales: Record<string, number> = {};
-  filteredLedger.forEach(entry => {
+  ledger.forEach(entry => {
     const dish = dishes.find(d => d.id === entry.menu_item_id);
     if (dish) {
       let catId = dish.category_id;
@@ -371,126 +344,62 @@ function OverviewView({ dishes, ledger, categories }: { dishes: Dish[], ledger: 
   const pieData = Object.entries(catSales).map(([name, value]) => ({ name, value }));
 
   const timelineMap: Record<string, number> = {};
-  filteredLedger.forEach(entry => {
-    const dateStr = new Date(entry.created_at).toLocaleDateString("en-IN", { month: 'short', day: 'numeric', year: 'numeric' });
+  ledger.forEach(entry => {
+    const dateStr = new Date(entry.created_at).toLocaleDateString("en-IN", { month: 'short', day: 'numeric' });
     timelineMap[dateStr] = (timelineMap[dateStr] || 0) + Number(entry.total_price);
   });
   const timelineData = Object.entries(timelineMap).map(([date, revenue]) => ({ date, revenue })).reverse();
 
   const exportPDF = () => {
     const doc = new jsPDF();
-    doc.text(`S4 Manohaa Food Plaza - Report (${dateFilter.toUpperCase()})`, 14, 15);
+    doc.text("S4 Manohaa Food Plaza - Overview Report", 14, 15);
     autoTable(doc, { head: [['Date', 'Revenue']], body: timelineData.map(r => [r.date, `INR ${r.revenue}`]), startY: 25 });
-    doc.save(`S4_Manohaa_Report_${dateFilter}.pdf`);
+    doc.save("S4_Manohaa_Report.pdf");
   };
 
   const exportCSV = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(timelineData), "Timeline Revenue");
-    XLSX.writeFile(wb, `S4_Manohaa_Revenue_${dateFilter}.xlsx`);
+    XLSX.writeFile(wb, "S4_Manohaa_Revenue.xlsx");
   };
 
   return (
     <div className="pb-12 space-y-8">
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-4">
+      <div className="flex justify-between items-end">
         <PageHead eyebrow="Intelligence & Data" title="Executive Overview" />
-        
-        <div className="flex flex-col items-start lg:items-end gap-4 mb-8">
-          <div className="flex flex-col sm:flex-row gap-3 items-center">
-            {/* DATE PILLS */}
-            <div className="flex bg-[#121214] border border-white/10 rounded-full p-1 shadow-lg h-[40px]">
-              {(['today', '7d', '30d', 'all', 'custom'] as const).map(filter => (
-                <button 
-                  key={filter} 
-                  onClick={() => setDateFilter(filter)}
-                  className={`relative px-4 py-1.5 rounded-full text-[10px] sm:text-xs font-bold uppercase tracking-widest transition-colors ${dateFilter === filter ? 'text-black' : 'text-gray-500 hover:text-white'}`}
-                >
-                  {dateFilter === filter && <motion.span layoutId="dateFilterPill" className="absolute inset-0 bg-[#D4AF37] rounded-full z-0" />}
-                  <span className="relative z-10">{filter === 'today' ? 'Today' : filter === '7d' ? '7 Days' : filter === '30d' ? '30 Days' : filter === 'custom' ? 'Custom' : 'All Time'}</span>
-                </button>
-              ))}
-            </div>
-            
-            {/* CUSTOM DATE INPUTS (Animated) */}
-            <AnimatePresence>
-              {dateFilter === 'custom' && (
-                <motion.div 
-                  initial={{ opacity: 0, width: 0, x: -20 }} 
-                  animate={{ opacity: 1, width: "auto", x: 0 }} 
-                  exit={{ opacity: 0, width: 0, x: -20 }}
-                  className="flex items-center gap-2 bg-[#121214] border border-[#D4AF37]/30 rounded-full px-3 py-1 h-[40px] overflow-hidden"
-                >
-                  <Calendar className="w-4 h-4 text-[#D4AF37]" />
-                  <input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} className="bg-transparent text-xs text-white outline-none [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]" />
-                  <span className="text-gray-500 text-xs">to</span>
-                  <input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} className="bg-transparent text-xs text-white outline-none [&::-webkit-calendar-picker-indicator]:filter-[invert(1)]" />
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-
-          <div className="flex gap-3">
-            <button onClick={exportCSV} className="flex items-center gap-2 bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] px-4 py-2 rounded-xl text-xs uppercase tracking-widest hover:bg-[#D4AF37]/20 transition-colors"><Download className="w-4 h-4" /> CSV</button>
-            <button onClick={exportPDF} className="flex items-center gap-2 bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] px-4 py-2 rounded-xl text-xs uppercase tracking-widest hover:bg-[#D4AF37]/20 transition-colors"><FileText className="w-4 h-4" /> PDF</button>
-          </div>
+        <div className="flex gap-3 mb-8">
+          <button onClick={exportCSV} className="flex items-center gap-2 bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] px-4 py-2 rounded-xl text-xs uppercase tracking-widest hover:bg-[#D4AF37]/20 transition-colors"><Download className="w-4 h-4" /> CSV</button>
+          <button onClick={exportPDF} className="flex items-center gap-2 bg-[#D4AF37]/10 border border-[#D4AF37]/30 text-[#D4AF37] px-4 py-2 rounded-xl text-xs uppercase tracking-widest hover:bg-[#D4AF37]/20 transition-colors"><FileText className="w-4 h-4" /> PDF</button>
         </div>
       </div>
       
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard icon={IndianRupee} label="Gross Revenue" value={inr(totalRevenue)} delta={`Filter: ${dateFilter.toUpperCase()}`} />
-        <StatCard icon={ShoppingCart} label="Total Transactions" value={totalOrders.toString()} delta={`Filter: ${dateFilter.toUpperCase()}`} />
-        <StatCard icon={Users} label="Total Items Sold" value={totalItemsSold.toString()} delta={`Filter: ${dateFilter.toUpperCase()}`} />
-        <StatCard icon={TrendingUp} label="Avg. Order Value" value={inr(avgTicket)} delta={`Filter: ${dateFilter.toUpperCase()}`} />
+        <StatCard icon={IndianRupee} label="Gross Revenue" value={inr(totalRevenue)} delta="Synced with Database" />
+        <StatCard icon={ShoppingCart} label="Total Transactions" value={totalOrders.toString()} delta="POS Entries Logged" />
+        <StatCard icon={Users} label="Total Items Sold" value={totalItemsSold.toString()} delta="Units Dispatched" />
+        <StatCard icon={TrendingUp} label="Avg. Order Value" value={inr(avgTicket)} delta="Per Ticket Average" />
       </div>
 
       <Glass className="p-7">
-        <div className="flex flex-wrap justify-between items-center mb-6 gap-4">
-          <h2 className="font-serif text-xl text-[#D4AF37]">Revenue Velocity (Timeline)</h2>
-          
-          {/* GRAPH TYPE TOGGLES */}
-          <div className="flex bg-black/40 border border-white/10 rounded-xl p-1">
-            <button onClick={() => setChartType('area')} className={`p-2 rounded-lg transition-colors ${chartType === 'area' ? 'bg-[#D4AF37]/20 text-[#D4AF37]' : 'text-gray-500 hover:text-white'}`} title="Area Chart"><TrendingUp className="w-4 h-4" /></button>
-            <button onClick={() => setChartType('bar')} className={`p-2 rounded-lg transition-colors ${chartType === 'bar' ? 'bg-[#D4AF37]/20 text-[#D4AF37]' : 'text-gray-500 hover:text-white'}`} title="Bar Chart"><BarChart2 className="w-4 h-4" /></button>
-            <button onClick={() => setChartType('line')} className={`p-2 rounded-lg transition-colors ${chartType === 'line' ? 'bg-[#D4AF37]/20 text-[#D4AF37]' : 'text-gray-500 hover:text-white'}`} title="Line Chart"><Activity className="w-4 h-4" /></button>
-          </div>
-        </div>
-
+        <h2 className="mb-6 font-serif text-xl text-[#D4AF37]">Revenue Velocity (Timeline)</h2>
         <div className="h-72 w-full">
           {timelineData.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-500 text-sm">No ledger entries recorded for this date range.</div>
+            <div className="h-full flex items-center justify-center text-gray-500 text-sm">No ledger entries recorded yet. Sync items in POS to populate.</div>
           ) : (
             <ResponsiveContainer width="100%" height="100%">
-              {chartType === 'area' ? (
-                <AreaChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.6}/>
-                      <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" stroke="#888" tickLine={false} tick={{ fontSize: 11 }} tickMargin={10} />
-                  <YAxis stroke="#888" tickLine={false} tickFormatter={(v) => `₹${v}`} tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.5)' }} itemStyle={{ color: '#D4AF37', fontWeight: 'bold' }} formatter={(val: any) => [inr(Number(val)), "Revenue"]} labelStyle={{ color: '#aaa', marginBottom: '4px' }} cursor={{ stroke: 'rgba(212,175,55,0.2)', strokeWidth: 2 }} />
-                  <Area type="monotone" dataKey="revenue" stroke="#D4AF37" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" activeDot={{ r: 6, fill: '#121214', stroke: '#D4AF37', strokeWidth: 2 }} />
-                </AreaChart>
-              ) : chartType === 'bar' ? (
-                <BarChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" stroke="#888" tickLine={false} tick={{ fontSize: 11 }} tickMargin={10} />
-                  <YAxis stroke="#888" tickLine={false} tickFormatter={(v) => `₹${v}`} tick={{ fontSize: 11 }} />
-                  <Tooltip cursor={{ fill: 'rgba(212,175,55,0.08)' }} contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} itemStyle={{ color: '#D4AF37', fontWeight: 'bold' }} formatter={(val: any) => [inr(Number(val)), "Revenue"]} />
-                  <Bar dataKey="revenue" fill="#D4AF37" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                </BarChart>
-              ) : (
-                <LineChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="date" stroke="#888" tickLine={false} tick={{ fontSize: 11 }} tickMargin={10} />
-                  <YAxis stroke="#888" tickLine={false} tickFormatter={(v) => `₹${v}`} tick={{ fontSize: 11 }} />
-                  <Tooltip contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} itemStyle={{ color: '#D4AF37', fontWeight: 'bold' }} formatter={(val: any) => [inr(Number(val)), "Revenue"]} cursor={{ stroke: 'rgba(212,175,55,0.2)', strokeWidth: 2 }} />
-                  <Line type="monotone" dataKey="revenue" stroke="#D4AF37" strokeWidth={3} dot={{ r: 4, fill: '#121214', stroke: '#D4AF37', strokeWidth: 2 }} activeDot={{ r: 6, fill: '#D4AF37', stroke: '#fff', strokeWidth: 2 }} />
-                </LineChart>
-              )}
+              <AreaChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="55%" stopColor="#D4AF37" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="date" stroke="#888" tickLine={false} />
+                <YAxis stroke="#888" tickLine={false} tickFormatter={(v) => `₹${v}`} />
+                <Tooltip contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} formatter={(val: any) => [inr(Number(val)), "Revenue"]} />
+                <Area type="monotone" dataKey="revenue" stroke="#D4AF37" strokeWidth={3} fillOpacity={1} fill="url(#colorRev)" />
+              </AreaChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -508,8 +417,8 @@ function OverviewView({ dishes, ledger, categories }: { dishes: Dish[], ledger: 
                   <Pie data={pieData} innerRadius={65} outerRadius={85} paddingAngle={6} dataKey="value" stroke="none">
                     {pieData.map((entry, index) => <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />)}
                   </Pie>
-                  <Tooltip contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} itemStyle={{ color: '#fff' }} formatter={(val: any) => inr(Number(val))} />
-                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '12px' }} />
+                  <Tooltip contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} formatter={(val: any) => inr(Number(val))} />
+                  <Legend verticalAlign="bottom" height={36} iconType="circle" />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -527,7 +436,7 @@ function OverviewView({ dishes, ledger, categories }: { dishes: Dish[], ledger: 
                   <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgba(255,255,255,0.05)" />
                   <XAxis type="number" hide />
                   <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fill: '#aaa', fontSize: 12 }} width={110} />
-                  <Tooltip cursor={{ fill: 'rgba(212,175,55,0.08)' }} contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} itemStyle={{ color: '#D4AF37', fontWeight: 'bold' }} />
+                  <Tooltip cursor={{ fill: 'rgba(212,175,55,0.08)' }} contentStyle={{ backgroundColor: '#121214', borderColor: '#D4AF37', borderRadius: '12px' }} />
                   <Bar dataKey="sales" fill="#D4AF37" radius={[0, 6, 6, 0]} barSize={22} />
                 </BarChart>
               </ResponsiveContainer>
@@ -578,61 +487,39 @@ function MenuView({ dishes, categories, setDishes, uploadImage }: any) {
       </div>
 
       <motion.div layout className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 pb-10">
-  <AnimatePresence mode="popLayout">
-    {items.length === 0 ? (
-      <p className="text-gray-500 text-sm pl-2">No items mapped to this category.</p>
-    ) : (
-      items.map((d: any) => (
-        <motion.div 
-          key={d.id} 
-          layout 
-          initial={{ opacity: 0, scale: 0.94 }} 
-          animate={{ opacity: 1, scale: 1 }} 
-          exit={{ opacity: 0, scale: 0.94 }} 
-          className="relative group"
-        >
-          <Glass className="overflow-hidden border-white/5 h-full flex flex-col">
-            <div className="relative h-40 overflow-hidden shrink-0">
-              <img 
-                src={d.img} 
-                alt={d.name} 
-                className={`h-full w-full object-cover transition-all duration-500 ${d.available ? "" : "grayscale opacity-50"}`} 
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#09090B] via-transparent to-transparent" />
-              {d.popular && (
-                <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2 py-1 rounded border border-[#D4AF37]/50 flex items-center gap-1">
-                  <Star className="w-3 h-3 text-[#D4AF37] fill-[#D4AF37]" />
-                  <span className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider">Signature</span>
+        <AnimatePresence mode="popLayout">
+          {items.length === 0 ? <p className="text-gray-500 text-sm pl-2">No items mapped to this category.</p> : items.map((d:any) => (
+            <motion.div key={d.id} layout initial={{ opacity: 0, scale: 0.94 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.94 }} className="relative group">
+              <Glass className="overflow-hidden border-white/5 h-full flex flex-col">
+                <div className="relative h-40 overflow-hidden shrink-0">
+                  <img src={d.img} alt={d.name} className={`h-full w-full object-cover transition-all duration-500 ${d.available ? "" : "grayscale opacity-50"}`} />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#09090B] via-transparent to-transparent" />
+                  {d.popular && (
+                    <div className="absolute top-3 left-3 bg-black/70 backdrop-blur-md px-2 py-1 rounded border border-[#D4AF37]/50 flex items-center gap-1">
+                      <Star className="w-3 h-3 text-[#D4AF37] fill-[#D4AF37]" /><span className="text-[10px] text-[#D4AF37] font-bold uppercase tracking-wider">Signature</span>
+                    </div>
+                  )}
+                  <button onClick={() => handleEdit(d)} className="absolute top-3 right-3 p-2 bg-black/60 backdrop-blur-md rounded-full border border-white/20 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#D4AF37] hover:text-black hover:border-[#D4AF37]">
+                    <Edit2 className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-              <button 
-                onClick={() => handleEdit(d)} 
-                className="absolute top-3 right-3 p-2 bg-black/60 backdrop-blur-md rounded-full border border-white/20 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-[#D4AF37] hover:text-black hover:border-[#D4AF37]"
-              >
-                <Edit2 className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div className="flex flex-col flex-1 px-5 py-4 bg-[#121214]">
-              <div className="flex justify-between items-start mb-2">
-                <p className="text-[0.92rem] text-white/90 leading-tight font-medium pr-2">{d.name}</p>
-                <p className="font-serif text-lg text-[#D4AF37] shrink-0">{inr(d.price)}</p>
-              </div>
-              <p className="text-[10px] text-[#D4AF37]/70 uppercase tracking-widest mb-2 line-clamp-1">{getCategoryPath(d.category_id, categories)}</p>
-              <p className="text-xs text-gray-500 line-clamp-2 mb-4">{d.desc}</p>
-              <div className="mt-auto flex items-center justify-between pt-3 border-t border-white/5">
-                <span className={`text-[0.65rem] uppercase tracking-[0.16em] font-bold ${d.available ? "text-emerald-400" : "text-red-400"}`}>
-                  {d.available ? "Live on Menu" : "Sold Out"}
-                </span>
-                <Toggle on={d.available} onClick={() => toggleAvailability(d.id, d.available)} />
-              </div>
-            </div>
-          </Glass>
-        </motion.div>
-      ))
-    )}
-  </AnimatePresence>
-</motion.div>
+                <div className="flex flex-col flex-1 px-5 py-4 bg-[#121214]">
+                  <div className="flex justify-between items-start mb-2">
+                    <p className="text-[0.92rem] text-white/90 leading-tight font-medium pr-2">{d.name}</p>
+                    <p className="font-serif text-lg text-[#D4AF37] shrink-0">{inr(d.price)}</p>
+                  </div>
+                  <p className="text-[10px] text-[#D4AF37]/70 uppercase tracking-widest mb-2 line-clamp-1">{getCategoryPath(d.category_id, categories)}</p>
+                  <p className="text-xs text-gray-500 line-clamp-2 mb-4">{d.desc}</p>
+                  <div className="mt-auto flex items-center justify-between pt-3 border-t border-white/5">
+                    <span className={`text-[0.65rem] uppercase tracking-[0.16em] font-bold ${d.available ? "text-emerald-400" : "text-red-400"}`}>{d.available ? "Live on Menu" : "Sold Out"}</span>
+                    <Toggle on={d.available} onClick={() => toggleAvailability(d.id, d.available)} />
+                  </div>
+                </div>
+              </Glass>
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </motion.div>
 
       <AddDishModal open={modalOpen} onClose={() => setModalOpen(false)} dishToEdit={editingDish} onSave={(savedDish:any, isEdit:boolean) => {
         if (isEdit) setDishes((p:any) => p.map((d:any) => d.id === savedDish.id ? savedDish : d));
@@ -741,6 +628,7 @@ function AddDishModal({ open, onClose, dishToEdit, onSave, categories, uploadIma
     </AnimatePresence>
   );
 }
+
 // 8. POINT OF SALE (POS) LEDGER VIEW
 function LedgerView({ dishes, categories, ledger, setLedger }: any) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -847,7 +735,7 @@ function LedgerView({ dishes, categories, ledger, setLedger }: any) {
   );
 }
 
-// 9. AI VIEW (WITH SPEECH VOICE CONTROL)
+// 9. AI VIEW (UPDATED WITH VOICE CONTROL AND NO 'MESSAGE' TYPE ERRORS)
 function AIView({ ledger, dishes }: { ledger: LedgerEntry[], dishes: Dish[] }) {
   const [msgs, setMsgs] = useState<{ id: string; role: "user" | "ai"; text: string; }[]>([
     { id: "seed", role: "ai", text: "Hello! A very warm welcome to you. **Sommelier** at your service, ready to uncork the finest insights for **S4 Manohaa Food Plaza**! 🍷\n\nI am actively synced with your Supabase live database. Ask me to analyze your revenue, find your top-performing dishes, or evaluate sales velocities." }
@@ -911,6 +799,8 @@ function AIView({ ledger, dishes }: { ledger: LedgerEntry[], dishes: Dish[] }) {
       </div>
       
       <div className="flex-1 flex flex-col overflow-hidden relative w-full pb-24">
+        
+        {/* Scrollable Message Stream - ZERO 'MESSAGE' TYPE ERRORS HERE */}
         <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 sm:px-8 space-y-6 custom-scrollbar">
           {msgs.map((m) => (
             <motion.div 
