@@ -13,6 +13,7 @@
     "@ai-sdk/react": "^4.0.82",
     "@base-ui/react": "^1.7.0",
     "@google/genai": "^2.18.0",
+    "@google/generative-ai": "^0.24.1",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
     "ai": "^7.0.79",
