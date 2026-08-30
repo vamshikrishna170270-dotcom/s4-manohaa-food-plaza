@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronDown, MapPin, Star, Leaf, Flame, Phone, Clock, Navigation, 
-  Sparkles, Globe, Filter, MessageSquareQuote, Send, X, Check, Loader2, ThumbsUp
+  Globe, Filter, MessageSquareQuote, Send, X, Check, Loader2, ThumbsUp, Search
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -37,10 +37,9 @@ const DICTIONARY: Record<string, Record<string, string>> = {
     ourStoryTitle: "A Journey of Flavors",
     reviewsTitle: "What Our Guests Say",
     leaveReview: "Leave a Review",
-    aiConcierge: "AI Food Concierge",
-    aiPromptPlaceholder: "Craving something under ₹200...",
     getDirections: "Get Directions",
     openDaily: "Open Daily • 6:00 AM – 11:30 PM",
+    searchPlaceholder: "Search dishes by name..."
   }
 };
 
@@ -50,6 +49,7 @@ export default function ManohaaFoodPlaza() {
   const [lang, setLang] = useState<'en' | 'te' | 'hi'>('en');
   const [activeCat, setActiveCat] = useState("all");
   const [dietaryFilter, setDietaryFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
   const [menuItems, setMenuItems] = useState<Dish[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
@@ -62,14 +62,6 @@ export default function ManohaaFoodPlaza() {
   const [custComment, setCustComment] = useState("");
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [reviewSuccess, setReviewSuccess] = useState(false);
-
-  // AI Concierge Side Drawer State
-  const [conciergeOpen, setConciergeOpen] = useState(false);
-  const [aiInput, setAiInput] = useState("");
-  const [aiPrompt, setAiPrompt] = useState("");
-  const [aiRecommendation, setAiRecommendation] = useState<string | null>(null);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiFilteredIds, setAiFilteredIds] = useState<string[] | null>(null);
 
   const t = DICTIONARY['en'];
 
@@ -94,15 +86,22 @@ export default function ManohaaFoodPlaza() {
   }, []);
 
   const displayItems = useMemo(() => {
-    if (aiFilteredIds !== null) {
-      return menuItems.filter(item => aiFilteredIds.includes(item.id));
-    }
-    return menuItems.filter(item => {
+    let items = menuItems;
+    
+    items = items.filter(item => {
       const matchesCategory = activeCat === "all" || item.category_id === activeCat;
       const matchesDietary = dietaryFilter === "All" || (item.dietary_tags && item.dietary_tags.includes(dietaryFilter));
       return matchesCategory && matchesDietary;
     });
-  }, [activeCat, dietaryFilter, menuItems, aiFilteredIds]);
+
+    // Apply live search query filtering across items
+    if (searchQuery.trim() !== "") {
+      const q = searchQuery.toLowerCase();
+      items = items.filter(item => item.name.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q));
+    }
+
+    return items;
+  }, [activeCat, dietaryFilter, searchQuery, menuItems]);
 
   const popularItems = useMemo(() => displayItems.filter(i => i.popular), [displayItems]);
   const otherItems = useMemo(() => displayItems.filter(i => !i.popular), [displayItems]);
@@ -123,43 +122,6 @@ export default function ManohaaFoodPlaza() {
       setReviewSuccess(true);
       setTimeout(() => { setReviewSuccess(false); setReviewModalOpen(false); setCustName(""); setCustComment(""); setCustRating(5); }, 2000);
     }
-  };
-
-  const askConcierge = async () => {
-    if (!aiInput.trim() || aiLoading) return;
-    setAiLoading(true);
-    setAiPrompt(aiInput);
-    setAiInput("");
-
-    try {
-      const simplifiedMenu = menuItems.map(d => ({
-        id: d.id, name: d.name, price: d.price, is_veg: d.is_veg, tags: d.dietary_tags
-      }));
-      
-      const response = await fetch('/api/concierge', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: aiInput, menuData: simplifiedMenu })
-      });
-      
-      const data = await response.json();
-      setAiRecommendation(data.message);
-      
-      if (data.filteredIds) {
-        setAiFilteredIds(data.filteredIds);
-        if (window.innerWidth < 768) setConciergeOpen(false);
-        scrollToMenu();
-      }
-    } catch {
-      setAiRecommendation("I had a little trouble checking the menu. Try asking another way!");
-    }
-    setAiLoading(false);
-  };
-
-  const clearAiFilter = () => {
-    setAiFilteredIds(null);
-    setAiPrompt("");
-    setAiRecommendation(null);
   };
 
   const DetailedMenuCard = ({ item }: { item: Dish }) => (
@@ -188,7 +150,7 @@ export default function ManohaaFoodPlaza() {
   return (
     <div className="min-h-screen font-sans bg-[#09090B]">
       
-      {/* STICKY HEADER WITH RESTORED FIND RESTAURANT BUTTON */}
+      {/* STICKY HEADER */}
       <motion.header initial={{ y: -100, opacity: 0 }} animate={{ y: isScrolled ? 0 : -100, opacity: isScrolled ? 1 : 0 }} transition={{ duration: 0.4, ease: "easeOut" }} className="fixed top-0 left-0 right-0 z-40 flex items-center justify-between px-6 py-4 bg-[#09090B]/90 backdrop-blur-md border-b border-white/10 shadow-2xl">
         <div className="flex items-center gap-2">
           <span className="font-serif text-2xl font-black text-red-600 tracking-tighter">S4</span>
@@ -201,7 +163,7 @@ export default function ManohaaFoodPlaza() {
         </nav>
       </motion.header>
 
-      {/* HERO SECTION WITH RESTORED FIND RESTAURANT CTA BUTTON */}
+      {/* HERO SECTION */}
       <section className="relative h-screen min-h-[600px] flex flex-col justify-between overflow-hidden bg-black">
         <div className="absolute inset-0 z-0">
           <img src="/exterior.webp" alt="Manohaa Food Plaza" className="w-full h-full object-cover" />
@@ -238,43 +200,47 @@ export default function ManohaaFoodPlaza() {
             <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2">{t.ourOfferings}</h2>
           </div>
 
-          {aiFilteredIds && (
-            <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8 p-5 bg-gradient-to-r from-red-600/10 to-transparent border-l-4 border-red-600 rounded-r-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-              <div>
-                <h3 className="text-gray-900 font-bold flex items-center gap-2"><Sparkles className="w-5 h-5 text-red-600" /> AI Filter Active</h3>
-                <p className="text-sm text-gray-600">Showing magic results for: <span className="font-bold italic">"{aiPrompt}"</span></p>
-              </div>
-              <button onClick={clearAiFilter} className="bg-red-600 text-white text-xs font-bold uppercase tracking-widest px-4 py-2 rounded-lg hover:bg-gray-900 transition-colors">Clear Filter</button>
-            </motion.div>
-          )}
+          {/* SEARCH BAR INPUT UI ELEMENT */}
+          <div className="mb-6 relative">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
+              <Search className="w-5 h-5" />
+            </div>
+            <input 
+              type="text"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              placeholder={t.searchPlaceholder}
+              className="w-full bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl pl-12 pr-4 py-4 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-600 transition-all font-medium placeholder:text-gray-400"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery("")}
+                className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
 
-          {!aiFilteredIds && (
-            <>
-              <div className="flex items-center justify-center gap-2 flex-wrap mb-6">
-                <span className="text-xs font-bold uppercase text-gray-400 mr-2 flex items-center gap-1"><Filter className="w-3 h-3" /> Diet:</span>
-                {ALLERGEN_OPTIONS.map(tag => (
-                  <button key={tag} onClick={() => setDietaryFilter(tag)} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dietaryFilter === tag ? 'bg-red-600 text-white shadow-md' : 'bg-white/80 text-gray-600 border border-gray-200 hover:bg-white'}`}>{tag}</button>
-                ))}
-              </div>
-              <div className="flex justify-center flex-wrap gap-3 pb-8 mb-8 border-b border-gray-900/10">
-                <button onClick={() => setActiveCat("all")} className={`px-7 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === "all" ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>{t.allDelights}</button>
-                {categories.map(cat => (
-                  <button key={cat.id} onClick={() => setActiveCat(cat.id)} className={`flex items-center gap-2 pr-6 pl-2 py-2 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === cat.id ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>
-                    {cat.img ? <img src={cat.img} alt={cat.name} className="w-9 h-9 rounded-xl object-cover shadow-sm" /> : <div className="w-9 h-9 rounded-xl bg-gray-200" />} {cat.name}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
+          <div className="flex items-center justify-center gap-2 flex-wrap mb-6">
+            <span className="text-xs font-bold uppercase text-gray-400 mr-2 flex items-center gap-1"><Filter className="w-3 h-3" /> Diet:</span>
+            {ALLERGEN_OPTIONS.map(tag => (
+              <button key={tag} onClick={() => setDietaryFilter(tag)} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dietaryFilter === tag ? 'bg-red-600 text-white shadow-md' : 'bg-white/80 text-gray-600 border border-gray-200 hover:bg-white'}`}>{tag}</button>
+            ))}
+          </div>
+          <div className="flex justify-center flex-wrap gap-3 pb-8 mb-8 border-b border-gray-900/10">
+            <button onClick={() => setActiveCat("all")} className={`px-7 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === "all" ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>{t.allDelights}</button>
+            {categories.map(cat => (
+              <button key={cat.id} onClick={() => setActiveCat(cat.id)} className={`flex items-center gap-2 pr-6 pl-2 py-2 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === cat.id ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>
+                {cat.img ? <img src={cat.img} alt={cat.name} className="w-9 h-9 rounded-xl object-cover shadow-sm" /> : <div className="w-9 h-9 rounded-xl bg-gray-200" />} {cat.name}
+              </button>
+            ))}
+          </div>
 
           <div className="flex flex-col gap-12">
             {displayItems.length === 0 ? (
               <div className="text-center py-10 bg-white/50 rounded-3xl border border-white p-8">
-                <p className="text-gray-500 font-medium">No dishes match your request. Try asking the Concierge something else!</p>
-              </div>
-            ) : aiFilteredIds ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <AnimatePresence>{displayItems.map(item => <DetailedMenuCard key={item.id} item={item} />)}</AnimatePresence>
+                <p className="text-gray-500 font-medium">No dishes match your request. Try adjusting your search query or filters!</p>
               </div>
             ) : (
               <>
@@ -338,7 +304,7 @@ export default function ManohaaFoodPlaza() {
         </div>
       </section>
 
-      {/* LOCATION & MAPS SECTION (TARGET FOR FIND RESTAURANT) */}
+      {/* LOCATION & MAPS SECTION */}
       <section id="location-section" className="relative z-20 bg-[#09090B] text-white py-24 px-4 sm:px-6 border-t border-white/10">
         <div className="max-w-6xl mx-auto">
           <div className="text-center mb-12">
@@ -390,51 +356,6 @@ export default function ManohaaFoodPlaza() {
           </div>
         </div>
       </section>
-
-      {/* FLOATING AI CONCIERGE BUTTON */}
-      <div className="fixed bottom-6 right-6 z-[60]">
-        <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setConciergeOpen(true)} className="bg-[#D4AF37] text-black font-bold p-4 sm:px-6 rounded-full shadow-[0_0_30px_rgba(212,175,55,0.4)] flex items-center gap-2 border border-white/20">
-          <Sparkles className="w-5 h-5" />
-          <span className="text-xs uppercase tracking-widest hidden sm:inline">{t.aiConcierge}</span>
-        </motion.button>
-      </div>
-
-      {/* SIDE-DRAWER AI CONCIERGE */}
-      <AnimatePresence>
-        {conciergeOpen && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setConciergeOpen(false)} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[90]" />
-            <motion.div initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "spring", bounce: 0, duration: 0.4 }} className="fixed top-0 right-0 bottom-0 w-[85vw] sm:w-96 bg-[#121214] border-l border-white/10 z-[100] flex flex-col shadow-2xl">
-              <div className="flex justify-between items-center p-6 border-b border-white/10 shrink-0 bg-black/40">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#D4AF37]" />
-                  <h3 className="font-serif text-xl text-white">{t.aiConcierge}</h3>
-                </div>
-                <button onClick={() => setConciergeOpen(false)} className="text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 p-2 rounded-full transition-colors"><X className="w-4 h-4" /></button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-4">
-                <div className="self-start bg-white/5 border border-white/10 rounded-2xl rounded-tl-sm p-4 text-sm text-gray-200">
-                  Hi! Tell me what you feel like eating or your budget, and I'll filter the menu for you!
-                </div>
-                {aiPrompt && <div className="self-end bg-[#D4AF37] text-black font-medium rounded-2xl rounded-tr-sm px-4 py-3 max-w-[80%] text-sm">{aiPrompt}</div>}
-                {aiLoading && (
-                  <div className="self-start flex items-center gap-3 bg-white/5 rounded-2xl rounded-tl-sm px-5 py-4">
-                    <Loader2 className="w-4 h-4 text-[#D4AF37] animate-spin" />
-                    <span className="text-xs text-gray-400">Searching the menu...</span>
-                  </div>
-                )}
-                {aiRecommendation && !aiLoading && <div className="self-start bg-white/5 border border-[#D4AF37]/30 rounded-2xl rounded-tl-sm p-4 text-sm text-gray-200">{aiRecommendation}</div>}
-              </div>
-              <div className="p-4 border-t border-white/10 shrink-0 bg-black/40">
-                <div className="flex items-center gap-2 bg-[#09090B] border border-white/15 rounded-full p-1.5 focus-within:border-[#D4AF37] transition-colors">
-                  <input type="text" value={aiInput} onChange={e => setAiInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && askConcierge()} placeholder={t.aiPromptPlaceholder} className="flex-1 bg-transparent border-none outline-none text-white px-4 py-2 text-sm placeholder:text-gray-600" />
-                  <button onClick={askConcierge} disabled={aiLoading || !aiInput.trim()} className="bg-[#D4AF37] text-black w-10 h-10 rounded-full flex items-center justify-center shrink-0 disabled:opacity-50"><Send className="w-4 h-4 ml-0.5" /></button>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
 
       {/* CUSTOMER REVIEW SUBMISSION MODAL */}
       <AnimatePresence>

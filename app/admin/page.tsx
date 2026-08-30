@@ -131,6 +131,7 @@ export default function CommandCenter() {
 
   useEffect(() => {
     if (!isAuthenticated) return;
+
     async function loadData() {
       const [cats, menu, ledg, revs] = await Promise.all([
         supabase.from('categories').select('*').order('created_at', { ascending: true }),
@@ -144,7 +145,36 @@ export default function CommandCenter() {
       if (revs.data) setReviews(revs.data);
       setLoading(false);
     }
+
     loadData();
+
+    // 🔥 Real-time WebSocket subscriptions ensuring automatic state updates
+    const ledgerSub = supabase
+      .channel('admin_ledger_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ledger_entries' }, loadData)
+      .subscribe();
+      
+    const menuSub = supabase
+      .channel('admin_menu_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, loadData)
+      .subscribe();
+      
+    const catSub = supabase
+      .channel('admin_cat_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, loadData)
+      .subscribe();
+
+    const reviewSub = supabase
+      .channel('admin_review_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, loadData)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(ledgerSub);
+      supabase.removeChannel(menuSub);
+      supabase.removeChannel(catSub);
+      supabase.removeChannel(reviewSub);
+    };
   }, [isAuthenticated]);
 
   const uploadImage = async (file: File) => {
@@ -289,7 +319,6 @@ function MobileSidebar({ view, setView, open, setOpen }: any) {
 
 // 5. STRUCTURE VIEW
 function StructureView({ categories, setCategories, uploadImage }: any) {
-  // [Code identical to previous StructureView]
   const [editingCatId, setEditingCatId] = useState<string | null>(null);
   const [newCat, setNewCat] = useState("");
   const [parentId, setParentId] = useState<string | null>(null);
@@ -405,7 +434,6 @@ function StructureView({ categories, setCategories, uploadImage }: any) {
 
 // 6. DETAILED OVERVIEW VIEW
 function OverviewView({ dishes, ledger, categories }: { dishes: Dish[], ledger: LedgerEntry[], categories: Category[] }) {
-  // [Code identical to previous OverviewView]
   const [dateFilter, setDateFilter] = useState<'today' | '7d' | '30d' | 'all' | 'custom'>('all');
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
@@ -890,7 +918,6 @@ function AddDishModal({ open, onClose, dishToEdit, onSave, categories, uploadIma
 
 // 8. POINT OF SALE (POS) LEDGER VIEW
 function LedgerView({ dishes, categories, ledger, setLedger }: any) {
-  // [Code identical to previous POS View - omitting for space to keep code block intact]
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCat, setSelectedCat] = useState("all");
   const [cart, setCart] = useState<{ dish: Dish, qty: number }[]>([]);
@@ -1043,7 +1070,6 @@ function ReviewsView({ reviews, setReviews }: { reviews: Review[], setReviews: a
 
 // 9. AI VIEW (WITH SPEECH VOICE CONTROL)
 function AIView({ ledger, dishes }: { ledger: LedgerEntry[], dishes: Dish[] }) {
-  // [Code identical to previous AI View]
   const [msgs, setMsgs] = useState<{ id: string; role: "user" | "ai"; text: string; }[]>([
     { id: "seed", role: "ai", text: "Hello! A very warm welcome to you. **Sommelier** at your service, ready to uncork the finest insights for **S4 Manohaa Food Plaza**! 🍷\n\nI am actively synced with your Supabase live database. Ask me to analyze your revenue, find your top-performing dishes, or evaluate sales velocities." }
   ]);

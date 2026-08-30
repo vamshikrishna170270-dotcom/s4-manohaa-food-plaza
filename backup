@@ -1,0 +1,597 @@
+import 'react-native-url-polyfill/auto';
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  StyleSheet, Text, View, TouchableOpacity, ScrollView, 
+  StatusBar, ActivityIndicator, Alert, Modal, Platform, Vibration,
+  TextInput, Keyboard, useWindowDimensions
+} from 'react-native';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import NetInfo from '@react-native-community/netinfo';
+
+import { supabase } from './lib/supabase';
+import { 
+  initOfflineDatabase, 
+  syncOfflineTicketsToSupabase, 
+  placeOrderLocally, 
+  cacheMenuItems,
+  getCachedMenuItems 
+} from './lib/offlineQueue';
+
+type Category = { id: string; name: string; };
+type MenuItem = { id: string; name: string; price: number; is_veg?: boolean; available: boolean; category_id: string; };
+type CartItem = { id: string; name: string; price: number; qty: number; };
+type OrderRecord = { id: string | number; created_at: string; menu_item_id: string; quantity: number; total_price: number; status: string; table_number?: string; };
+
+export default function App() {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768; // Detects if the device is a tablet
+
+  const [activeTab, setActiveTab] = useState<'pos' | 'history' | 'kitchen'>('pos');
+  const [currentTime, setCurrentTime] = useState(Date.now());
+  const [cartSheetOpen, setCartSheetOpen] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
+  
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [activeCategoryId, setActiveCategoryId] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  
+  const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+  const [orderHistory, setOrderHistory] = useState<OrderRecord[]>([]);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [placingOrder, setPlacingOrder] = useState(false);
+
+  useEffect(() => {
+    initOfflineDatabase();
+    fetchData(true);
+
+    const unsubscribeNet = NetInfo.addEventListener(state => {
+      setIsOffline(!state.isConnected);
+      if (state.isConnected) {
+        syncOfflineTicketsToSupabase().then(() => fetchOrderHistory());
+      }
+    });
+
+    const interval = setInterval(() => setCurrentTime(Date.now()), 5000);
+    
+    // Realtime Subscriptions (Silent updates)
+    const menuSub = supabase.channel('menu_items_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'menu_items' }, () => fetchData(false))
+      .subscribe();
+      
+    const catSub = supabase.channel('categories_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'categories' }, () => fetchData(false))
+      .subscribe();
+      
+    const ordersSub = supabase.channel('ledger_channel')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'ledger_entries' }, () => fetchOrderHistory())
+      .subscribe();
+
+    return () => { 
+      clearInterval(interval);
+      unsubscribeNet();
+      supabase.removeChannel(menuSub); 
+      supabase.removeChannel(catSub); 
+      supabase.removeChannel(ordersSub); 
+    };
+  }, []);
+
+  // Fetch Data (showLoading boolean prevents interrupting the waiter during a realtime update)
+  const fetchData = async (showLoading = false) => {
+    if (showLoading) setLoading(true);
+    const netState = await NetInfo.fetch();
+    
+    if (netState.isConnected) {
+      try {
+        const [catsRes, itemsRes] = await Promise.all([
+          supabase.from('categories').select('id, name').order('created_at', { ascending: true }),
+          supabase.from('menu_items').select('*').eq('available', true).order('name', { ascending: true })
+        ]);
+        
+        if (catsRes.data) setCategories(catsRes.data);
+        if (itemsRes.data) {
+          setMenuItems(itemsRes.data);
+          cacheMenuItems(itemsRes.data);
+        }
+        await fetchOrderHistory();
+      } catch (error) {
+        console.error("Fetch Data Error:", error);
+      }
+    } else {
+      const cached = getCachedMenuItems();
+      setMenuItems(cached as any);
+    }
+    if (showLoading) setLoading(false);
+  };
+
+  const fetchOrderHistory = async () => {
+    const netState = await NetInfo.fetch();
+    if (netState.isConnected) {
+      const { data } = await supabase.from('ledger_entries').select('*').order('created_at', { ascending: false }).limit(200);
+      if (data) setOrderHistory(data);
+    }
+  };
+
+  const updateCart = (item: MenuItem | CartItem, delta: number) => {
+    Vibration.vibrate(30);
+    setCart(prev => {
+      const exists = prev.find(i => i.id === item.id);
+      if (!exists && delta > 0) return [...prev, { id: item.id, name: item.name, price: item.price, qty: 1 }];
+      if (exists) {
+        const newQty = exists.qty + delta;
+        if (newQty <= 0) return prev.filter(i => i.id !== item.id);
+        return prev.map(i => i.id === item.id ? { ...i, qty: newQty } : i);
+      }
+      return prev;
+    });
+  };
+
+  const handlePlaceOrder = async () => {
+    if (cart.length === 0 || placingOrder) return;
+    setPlacingOrder(true);
+    
+    try {
+      const timestamp = new Date().toISOString();
+      const netState = await NetInfo.fetch();
+
+      const entries = cart.map(item => ({
+        menu_item_id: item.id,
+        quantity: item.qty,
+        total_price: item.price * item.qty,
+        status: 'pending',
+        table_number: 'Walk-in',
+        created_at: timestamp
+      }));
+
+      // Optimistic UI Update for instant offline rendering
+      const localOptimisticRecords: OrderRecord[] = entries.map((entry, index) => ({
+        id: `local-${Date.now()}-${index}`,
+        ...entry
+      }));
+      setOrderHistory(prev => [...localOptimisticRecords, ...prev]);
+
+      // Save locally
+      entries.forEach(entry => placeOrderLocally(entry));
+
+      Vibration.vibrate([0, 50, 100, 50]);
+      setCart([]);
+      setCartSheetOpen(false);
+      
+      // If tablet, stay on POS screen, else jump to history
+      if (!isTablet) setActiveTab('history');
+
+      if (netState.isConnected) {
+        await syncOfflineTicketsToSupabase();
+        fetchOrderHistory(); 
+      }
+    } catch (error: any) {
+      Alert.alert("Order Error", "Failed to save order.");
+    } finally {
+      setPlacingOrder(false);
+    }
+  };
+
+  const tickets = useMemo(() => {
+    const groups: Record<string, any> = {};
+    orderHistory.forEach(row => {
+      const groupKey = row.created_at;
+      if (!groups[groupKey]) {
+        groups[groupKey] = { time: groupKey, status: row.status, table: row.table_number || 'Walk-in', items: [], total: 0 };
+      }
+      
+      const localItem = menuItems.find(m => m.id === row.menu_item_id);
+      groups[groupKey].items.push({ 
+        ledger_id: row.id, item_id: row.menu_item_id, qty: row.quantity,
+        name: localItem ? localItem.name : 'Unknown Dish', price: localItem ? localItem.price : 0
+      });
+      groups[groupKey].total += row.total_price;
+      if (row.status === 'pending') groups[groupKey].status = 'pending';
+    });
+    return Object.values(groups).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+  }, [orderHistory, menuItems]);
+
+  const handleCancelTicket = async (ticket: any) => {
+    if (isOffline) return Alert.alert("Offline", "Cannot delete tickets while offline.");
+    Alert.alert("Delete Order", "Cancel this order?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+          const ids = ticket.items.map((i: any) => i.ledger_id).filter((id: any) => typeof id !== 'string' || !id.startsWith('local'));
+          if (ids.length > 0) {
+            const { error } = await supabase.from('ledger_entries').update({ status: 'cancelled' }).in('id', ids);
+            if (error) Alert.alert("Error", error.message);
+            else fetchOrderHistory();
+          }
+      }}
+    ]);
+  };
+
+  const handleEditTicket = (ticket: any) => {
+    if (isOffline) return Alert.alert("Offline", "Cannot edit tickets while offline.");
+    Alert.alert("Edit Order", "Pull this order back to your cart?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Edit", onPress: async () => {
+          const ids = ticket.items.map((i: any) => i.ledger_id).filter((id: any) => typeof id !== 'string' || !id.startsWith('local'));
+          if (ids.length > 0) {
+            await supabase.from('ledger_entries').delete().in('id', ids);
+            const rebuiltCart = ticket.items.map((i: any) => ({ id: i.item_id, name: i.name, price: i.price, qty: i.qty }));
+            setCart(rebuiltCart);
+            setActiveTab('pos');
+            fetchOrderHistory();
+          }
+      }}
+    ]);
+  };
+
+  const markKitchenReady = async (ticket: any) => {
+    if (isOffline) return Alert.alert("Offline", "Cannot update kitchen status while offline.");
+    Vibration.vibrate(50);
+    const ids = ticket.items.map((i: any) => i.ledger_id).filter((id: any) => typeof id !== 'string' || !id.startsWith('local'));
+    if (ids.length > 0) {
+      const { error } = await supabase.from('ledger_entries').update({ status: 'completed' }).in('id', ids);
+      if (error) Alert.alert("Error", error.message);
+      else fetchOrderHistory();
+    }
+  };
+
+  const filteredItems = useMemo(() => {
+    let items = menuItems;
+    if (activeCategoryId !== 'all') items = items.filter(i => i.category_id === activeCategoryId);
+    if (searchQuery.trim() !== '') items = items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    return items;
+  }, [menuItems, activeCategoryId, searchQuery]);
+
+  const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
+  const cartQty = cart.reduce((sum, item) => sum + item.qty, 0);
+
+  // --- REUSABLE CART COMPONENT (For Mobile Modal & Tablet Side-Pane) ---
+  const CartContent = () => (
+    <View style={styles.cartContainer}>
+      <View style={styles.sheetHeader}>
+        <Text style={styles.sheetTitle}>Current Order</Text>
+        {!isTablet && <TouchableOpacity onPress={() => setCartSheetOpen(false)}><Text style={styles.closeText}>Close</Text></TouchableOpacity>}
+      </View>
+      
+      <ScrollView style={{flex: 1}} contentContainerStyle={{paddingBottom: 20}}>
+        {cart.length === 0 ? (
+          <Text style={styles.emptyText}>Cart is empty.</Text>
+        ) : (
+          cart.map(item => (
+            <View key={item.id} style={styles.sheetRow}>
+              <View style={{flex: 1, paddingRight: 10}}>
+                <Text style={styles.sheetItemName}>{item.name}</Text>
+                <Text style={styles.sheetItemPrice}>₹{item.price * item.qty}</Text>
+              </View>
+              <View style={styles.sheetQtyControls}>
+                <TouchableOpacity style={styles.sheetQtyBtn} onPress={() => updateCart(item, -1)}><Text style={styles.sheetQtyBtnText}>-</Text></TouchableOpacity>
+                <Text style={styles.sheetQtyValue}>{item.qty}</Text>
+                <TouchableOpacity style={styles.sheetQtyBtn} onPress={() => updateCart(item, 1)}><Text style={styles.sheetQtyBtnText}>+</Text></TouchableOpacity>
+              </View>
+            </View>
+          ))
+        )}
+      </ScrollView>
+
+      <View style={styles.sheetFooter}>
+        <Text style={styles.sheetTotalLabel}>Grand Total</Text>
+        <Text style={styles.sheetTotalValue}>₹{cartTotal}</Text>
+      </View>
+
+      <TouchableOpacity 
+        style={[styles.confirmBtn, cart.length === 0 && {backgroundColor: '#3F3F46'}]} 
+        onPress={handlePlaceOrder} 
+        disabled={placingOrder || cart.length === 0}
+      >
+        {placingOrder ? <ActivityIndicator color="#000" /> : <Text style={[styles.confirmBtnText, cart.length === 0 && {color: '#A1A1AA'}]}>SEND TO KITCHEN</Text>}
+      </TouchableOpacity>
+    </View>
+  );
+
+  return (
+    <SafeAreaProvider>
+      <SafeAreaView style={styles.screen}>
+        <StatusBar barStyle="light-content" backgroundColor="#09090B" />
+
+        {/* HEADER */}
+        <View style={styles.header}>
+          <View style={styles.headerTopRow}>
+            <Text style={styles.greeting}>S4 Manohaa</Text>
+            {isOffline && <View style={styles.offlineBadge}><Text style={styles.offlineText}>OFFLINE</Text></View>}
+          </View>
+          <Text style={styles.headerRole}>{activeTab === 'pos' ? 'Taking Order' : activeTab === 'history' ? 'Order Log' : 'Kitchen KDS'}</Text>
+        </View>
+
+        {/* MAIN CONTENT AREA */}
+        <View style={styles.contentContainer}>
+          {loading ? <ActivityIndicator size="large" color="#D4AF37" style={{marginTop: 50}} /> : (
+            <>
+              {/* POS SCREEN (Split Pane on Tablet) */}
+              {activeTab === 'pos' && (
+                <View style={{ flex: 1, flexDirection: isTablet ? 'row' : 'column' }}>
+                  
+                  {/* LEFT PANE: Menu & Categories */}
+                  <View style={{ flex: isTablet ? 7 : 1 }}>
+                    <View style={styles.searchBarWrap}>
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Search menu items..."
+                        placeholderTextColor="#71717A"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        returnKeyType="search"
+                        clearButtonMode="while-editing"
+                      />
+                    </View>
+
+                    <View style={styles.categoryScrollWrap}>
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll} keyboardShouldPersistTaps="handled">
+                        <TouchableOpacity onPress={() => setActiveCategoryId('all')} style={[styles.catPill, activeCategoryId === 'all' && styles.catPillActive]}>
+                          <Text style={[styles.catText, activeCategoryId === 'all' && styles.catTextActive]}>All Dishes</Text>
+                        </TouchableOpacity>
+                        {categories.map(cat => (
+                          <TouchableOpacity key={cat.id} onPress={() => setActiveCategoryId(cat.id)} style={[styles.catPill, activeCategoryId === cat.id && styles.catPillActive]}>
+                            <Text style={[styles.catText, activeCategoryId === cat.id && styles.catTextActive]}>{cat.name}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </ScrollView>
+                    </View>
+
+                    <ScrollView contentContainerStyle={styles.grid} onScrollBeginDrag={Keyboard.dismiss} keyboardShouldPersistTaps="handled">
+                      {filteredItems.length === 0 && <Text style={styles.emptyText}>No dishes match your search.</Text>}
+                      {filteredItems.map(item => {
+                        const cartItem = cart.find(i => i.id === item.id);
+                        return (
+                          <TouchableOpacity 
+                            key={item.id} 
+                            style={[styles.card, { width: isTablet ? '31%' : '48%' }, cartItem && styles.cardActive]} 
+                            activeOpacity={0.8}
+                            onPress={() => { Keyboard.dismiss(); if (!cartItem) updateCart(item, 1); }}
+                          >
+                            <View style={styles.cardHeader}>
+                              <View style={[styles.dietDot, {backgroundColor: item.is_veg ? '#10B981' : '#EF4444'}]} />
+                              <Text style={styles.priceTag}>₹{item.price}</Text>
+                            </View>
+                            <Text style={styles.cardName} numberOfLines={2}>{item.name}</Text>
+                            
+                            {cartItem ? (
+                              <View style={styles.qtyRow}>
+                                <TouchableOpacity style={styles.qtyBtn} onPress={() => updateCart(item, -1)}><Text style={styles.qtyBtnText}>-</Text></TouchableOpacity>
+                                <Text style={styles.qtyValue}>{cartItem.qty}</Text>
+                                <TouchableOpacity style={styles.qtyBtn} onPress={() => updateCart(item, 1)}><Text style={styles.qtyBtnText}>+</Text></TouchableOpacity>
+                              </View>
+                            ) : (
+                              <Text style={styles.addText}>Tap to Add +</Text>
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </ScrollView>
+                  </View>
+
+                  {/* RIGHT PANE: Cart (Tablet Only) */}
+                  {isTablet && (
+                    <View style={styles.tabletCartPane}>
+                      <CartContent />
+                    </View>
+                  )}
+                </View>
+              )}
+
+              {/* HISTORY SCREEN */}
+              {activeTab === 'history' && (
+                <ScrollView contentContainerStyle={styles.historyList}>
+                  {tickets.length === 0 && <Text style={styles.emptyText}>No orders recorded today.</Text>}
+                  {tickets.map((ticket: any) => {
+                    const ticketAge = (currentTime - new Date(ticket.time).getTime()) / 1000;
+                    const canEdit = ticket.status === 'pending' && ticketAge < 120 && !isOffline;
+                    
+                    return (
+                      <View key={ticket.time} style={[styles.ticketBox, ticket.status === 'cancelled' && {opacity: 0.4}]}>
+                        <View style={styles.ticketHeader}>
+                          <Text style={styles.ticketTime}>{new Date(ticket.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</Text>
+                          <Text style={[styles.statusBadge, ticket.status === 'completed' ? styles.bgGreen : ticket.status === 'cancelled' ? styles.bgRed : styles.bgGold]}>
+                            {ticket.status.toUpperCase()}
+                          </Text>
+                        </View>
+                        <Text style={styles.tableText}>{ticket.table}</Text>
+                        
+                        {ticket.items.map((i: any, idx: number) => (
+                          <Text key={idx} style={styles.ticketItemText}>• {i.qty}x {i.name}</Text>
+                        ))}
+                        
+                        <View style={styles.ticketFooter}>
+                          <Text style={styles.ticketTotal}>₹{ticket.total}</Text>
+                          {canEdit && (
+                            <View style={styles.actionRow}>
+                              <TouchableOpacity onPress={() => handleCancelTicket(ticket)} style={styles.btnDanger}><Text style={styles.btnTextDanger}>Delete</Text></TouchableOpacity>
+                              <TouchableOpacity onPress={() => handleEditTicket(ticket)} style={styles.btnPrimary}><Text style={styles.btnTextBlack}>Edit ({Math.max(0, 120 - Math.floor(ticketAge))}s)</Text></TouchableOpacity>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              )}
+
+              {/* KITCHEN KDS SCREEN */}
+              {activeTab === 'kitchen' && (
+                <ScrollView contentContainerStyle={styles.historyList}>
+                  {tickets.filter(t => t.status === 'pending').map((ticket: any) => (
+                    <View key={ticket.time} style={styles.kdsBox}>
+                      <View style={styles.kdsHeader}>
+                        <View>
+                          <Text style={styles.kdsTime}>{new Date(ticket.time).toLocaleTimeString()}</Text>
+                          <Text style={styles.tableText}>{ticket.table}</Text>
+                        </View>
+                        <Text style={styles.kdsLabel}>NEW ORDER</Text>
+                      </View>
+                      <View style={styles.kdsBody}>
+                        {ticket.items.map((i: any, idx: number) => (
+                          <Text key={idx} style={styles.kdsItemText}>{i.qty} x  {i.name}</Text>
+                        ))}
+                      </View>
+                      <TouchableOpacity 
+                        style={[styles.kdsReadyBtn, isOffline && { opacity: 0.5 }]} 
+                        onPress={() => markKitchenReady(ticket)}
+                        disabled={isOffline}
+                      >
+                        <Text style={styles.kdsReadyText}>{isOffline ? 'OFFLINE - CANNOT COMPLETE' : 'MARK AS PREPARED'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </>
+          )}
+        </View>
+
+        {/* FLOATING CART BUTTON (Mobile Only, Fixed Z-Index) */}
+        {!isTablet && activeTab === 'pos' && cart.length > 0 && (
+          <View style={styles.floatingCartWrap}>
+            <TouchableOpacity style={styles.floatingCart} activeOpacity={0.9} onPress={() => setCartSheetOpen(true)}>
+              <View>
+                <Text style={styles.floatingCartItems}>{cartQty} Items Added</Text>
+                <Text style={styles.floatingCartTotal}>₹{cartTotal}</Text>
+              </View>
+              <View style={styles.floatingCartBtn}>
+                <Text style={styles.floatingCartBtnText}>Review ➔</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* BOTTOM NAVIGATION */}
+        <View style={styles.bottomNav}>
+          <TouchableOpacity style={styles.navTab} onPress={() => setActiveTab('pos')}>
+            <Text style={[styles.navIcon, activeTab === 'pos' && styles.navIconActive]}>📝</Text>
+            <Text style={[styles.navText, activeTab === 'pos' && styles.navTextActive]}>Menu</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navTab} onPress={() => setActiveTab('history')}>
+            <Text style={[styles.navIcon, activeTab === 'history' && styles.navIconActive]}>🧾</Text>
+            <Text style={[styles.navText, activeTab === 'history' && styles.navTextActive]}>History</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.navTab} onPress={() => setActiveTab('kitchen')}>
+            <Text style={[styles.navIcon, activeTab === 'kitchen' && styles.navIconActive]}>👨‍🍳</Text>
+            <Text style={[styles.navText, activeTab === 'kitchen' && styles.navTextActive]}>Kitchen</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* CART CHECKOUT MODAL (Mobile Only) */}
+        {!isTablet && (
+          <Modal visible={cartSheetOpen} animationType="slide" transparent={true}>
+            <View style={styles.sheetOverlay}>
+              <TouchableOpacity style={{flex: 1}} onPress={() => setCartSheetOpen(false)} />
+              <View style={styles.sheetContent}>
+                <View style={styles.sheetHandle} />
+                <CartContent />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+      </SafeAreaView>
+    </SafeAreaProvider>
+  );
+}
+
+const styles = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: '#09090B' },
+  header: { paddingHorizontal: 20, paddingTop: 10, paddingBottom: 15, backgroundColor: '#09090B' },
+  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  greeting: { fontSize: 26, fontWeight: '900', color: '#FFF' },
+  headerRole: { fontSize: 13, fontWeight: '700', color: '#D4AF37', textTransform: 'uppercase', letterSpacing: 1, marginTop: 4 },
+  offlineBadge: { backgroundColor: '#EF4444', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  offlineText: { color: '#FFF', fontSize: 10, fontWeight: '900', textTransform: 'uppercase' },
+  
+  contentContainer: { flex: 1, backgroundColor: '#121214', borderTopLeftRadius: 24, borderTopRightRadius: 24, overflow: 'hidden' },
+  
+  searchBarWrap: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, backgroundColor: '#121214' },
+  searchInput: { backgroundColor: '#18181B', borderWidth: 1, borderColor: '#27272A', borderRadius: 14, paddingHorizontal: 16, paddingVertical: 12, color: '#FFF', fontSize: 16, fontWeight: '600' },
+
+  categoryScrollWrap: { backgroundColor: '#121214', borderBottomWidth: 1, borderColor: '#27272A' },
+  categoryScroll: { paddingHorizontal: 16, paddingVertical: 10, gap: 10 },
+  catPill: { paddingHorizontal: 20, paddingVertical: 10, borderRadius: 25, backgroundColor: '#18181B', borderWidth: 1, borderColor: '#27272A' },
+  catPillActive: { backgroundColor: '#D4AF37', borderColor: '#D4AF37' },
+  catText: { color: '#A1A1AA', fontWeight: '700', fontSize: 14 },
+  catTextActive: { color: '#09090B', fontWeight: '900' },
+
+  grid: { flexDirection: 'row', flexWrap: 'wrap', padding: 16, justifyContent: 'space-between', paddingBottom: 120 },
+  card: { backgroundColor: '#18181B', padding: 16, borderRadius: 20, marginBottom: 16, borderWidth: 2, borderColor: '#27272A' },
+  cardActive: { borderColor: '#D4AF37', backgroundColor: '#1C1914' },
+  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  dietDot: { width: 10, height: 10, borderRadius: 5 },
+  priceTag: { color: '#FFF', fontWeight: '900', fontSize: 16 },
+  cardName: { color: '#E4E4E7', fontSize: 16, fontWeight: '700', marginBottom: 16, minHeight: 40 },
+  addText: { color: '#D4AF37', fontWeight: '800', fontSize: 14, marginTop: 'auto' },
+  
+  qtyRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#27272A', borderRadius: 12, padding: 4, marginTop: 'auto' },
+  qtyBtn: { width: 36, height: 36, backgroundColor: '#3F3F46', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  qtyBtnText: { color: '#FFF', fontSize: 20, fontWeight: 'bold' },
+  qtyValue: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+
+  tabletCartPane: { flex: 3, borderLeftWidth: 1, borderColor: '#27272A', backgroundColor: '#18181B', paddingTop: 10 },
+  cartContainer: { flex: 1, paddingHorizontal: 20, paddingBottom: 20 },
+
+  bottomNav: { flexDirection: 'row', backgroundColor: '#09090B', paddingBottom: Platform.OS === 'ios' ? 25 : 15, paddingTop: 12, borderTopWidth: 1, borderColor: '#27272A', justifyContent: 'space-around', zIndex: 10 },
+  navTab: { alignItems: 'center', flex: 1 },
+  navIcon: { fontSize: 24, opacity: 0.4 },
+  navIconActive: { opacity: 1 },
+  navText: { color: '#71717A', fontSize: 12, fontWeight: '700', marginTop: 6 },
+  navTextActive: { color: '#D4AF37' },
+
+  // Fixed the Floating Cart positioning to sit safely above the bottom navigation
+  floatingCartWrap: { position: 'absolute', bottom: 100, left: 16, right: 16, zIndex: 100 },
+  floatingCart: { flexDirection: 'row', backgroundColor: '#D4AF37', borderRadius: 24, padding: 20, alignItems: 'center', justifyContent: 'space-between', elevation: 8, shadowColor: '#000', shadowOffset: {width: 0, height: 4}, shadowOpacity: 0.3, shadowRadius: 5 },
+  floatingCartItems: { color: '#09090B', fontSize: 13, fontWeight: '800', textTransform: 'uppercase', opacity: 0.8 },
+  floatingCartTotal: { color: '#09090B', fontSize: 24, fontWeight: '900' },
+  floatingCartBtn: { backgroundColor: '#09090B', paddingHorizontal: 18, paddingVertical: 12, borderRadius: 16 },
+  floatingCartBtnText: { color: '#D4AF37', fontWeight: '900', fontSize: 14 },
+
+  sheetOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' },
+  sheetContent: { backgroundColor: '#18181B', borderTopLeftRadius: 35, borderTopRightRadius: 35, paddingTop: 24, paddingBottom: 20, height: '75%' },
+  sheetHandle: { width: 40, height: 5, backgroundColor: '#3F3F46', borderRadius: 5, alignSelf: 'center', marginBottom: 20 },
+  sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 15, borderBottomWidth: 1, borderColor: '#27272A' },
+  sheetTitle: { color: '#FFF', fontSize: 24, fontWeight: '900' },
+  closeText: { color: '#A1A1AA', fontSize: 16, fontWeight: '700' },
+  sheetRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  sheetItemName: { color: '#FFF', fontSize: 17, fontWeight: '700', marginBottom: 6 },
+  sheetItemPrice: { color: '#A1A1AA', fontSize: 15, fontWeight: '600' },
+  sheetQtyControls: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#27272A', borderRadius: 12, padding: 4 },
+  sheetQtyBtn: { width: 40, height: 40, backgroundColor: '#3F3F46', borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  sheetQtyBtnText: { color: '#FFF', fontSize: 22, fontWeight: 'bold' },
+  sheetQtyValue: { color: '#FFF', fontSize: 18, fontWeight: '900', marginHorizontal: 16 },
+  sheetFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, paddingTop: 20, borderTopWidth: 1, borderColor: '#27272A', marginBottom: 25 },
+  sheetTotalLabel: { color: '#E4E4E7', fontSize: 18, fontWeight: '700' },
+  sheetTotalValue: { color: '#D4AF37', fontSize: 30, fontWeight: '900' },
+  confirmBtn: { backgroundColor: '#D4AF37', paddingVertical: 20, borderRadius: 18, alignItems: 'center' },
+  confirmBtnText: { color: '#09090B', fontSize: 18, fontWeight: '900', letterSpacing: 1 },
+
+  historyList: { padding: 16, gap: 16 },
+  emptyText: { color: '#71717A', textAlign: 'center', marginTop: 40, fontSize: 16 },
+  ticketBox: { backgroundColor: '#18181B', padding: 16, borderRadius: 20, borderWidth: 1, borderColor: '#27272A' },
+  ticketHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, paddingBottom: 12, borderBottomWidth: 1, borderColor: '#27272A' },
+  ticketTime: { color: '#FFF', fontSize: 18, fontWeight: '900' },
+  tableText: { color: '#A1A1AA', fontSize: 14, fontWeight: '700', marginBottom: 10 },
+  statusBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, fontSize: 11, fontWeight: '900' },
+  bgGreen: { backgroundColor: 'rgba(16,185,129,0.15)', color: '#10B981' },
+  bgRed: { backgroundColor: 'rgba(239,68,68,0.15)', color: '#EF4444' },
+  bgGold: { backgroundColor: 'rgba(212,175,55,0.15)', color: '#D4AF37' },
+  ticketItemText: { color: '#A1A1AA', fontSize: 16, marginBottom: 8, fontWeight: '600' },
+  ticketFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderColor: '#27272A' },
+  ticketTotal: { color: '#FFF', fontSize: 22, fontWeight: '900' },
+  actionRow: { flexDirection: 'row', gap: 10 },
+  btnDanger: { backgroundColor: 'rgba(239,68,68,0.1)', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(239,68,68,0.3)' },
+  btnPrimary: { backgroundColor: '#D4AF37', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 10 },
+  btnTextDanger: { color: '#EF4444', fontWeight: '800', fontSize: 14 },
+  btnTextBlack: { color: '#000', fontWeight: '900', fontSize: 14 },
+
+  kdsBox: { backgroundColor: '#18181B', padding: 24, borderRadius: 20, borderWidth: 2, borderColor: '#D4AF37' },
+  kdsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15, borderBottomWidth: 1, borderColor: '#27272A', paddingBottom: 15 },
+  kdsTime: { color: '#D4AF37', fontSize: 20, fontWeight: '900', marginBottom: 4 },
+  kdsLabel: { color: '#EF4444', fontSize: 14, fontWeight: '900', letterSpacing: 1 },
+  kdsBody: { marginBottom: 25 },
+  kdsItemText: { color: '#FFF', fontSize: 22, fontWeight: '800', marginBottom: 12 },
+  kdsReadyBtn: { backgroundColor: '#10B981', paddingVertical: 18, borderRadius: 14, alignItems: 'center' },
+  kdsReadyText: { color: '#000', fontSize: 16, fontWeight: '900', letterSpacing: 1 }
+});
