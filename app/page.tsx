@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   ChevronDown, MapPin, Star, Leaf, Flame, Phone, Clock, Navigation, 
-  Globe, Filter, MessageSquareQuote, Send, X, Check, Loader2, ThumbsUp, Search
+  Filter, X, Loader2, ThumbsUp, Search, Info
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
@@ -45,8 +45,22 @@ const DICTIONARY: Record<string, Record<string, string>> = {
 
 const ALLERGEN_OPTIONS = ["All", "Gluten-Free", "Vegan", "Jain", "Nut-Free", "Spicy"];
 
+const TERMS_AND_CONDITIONS = [
+  "Kindly allow us 15-20 minutes to serve your order.",
+  "Order once placed cannot be cancelled. Can be altered if the restaurant manager permits.",
+  "Items listed in the menu are subject to availability.",
+  "GST will be applicable as per the government rules.",
+  "We accept Cash, UPI, or Card Payments.",
+  "Outside food is strictly prohibited.",
+  "Packing Charges extra Rs 10 per item.",
+  "Consumption of alcoholic beverages, smoking, or carrying/using any kind of drugs are strictly prohibited in the premises.",
+  "Entry into the kitchen requires permission from the Hotel Manager.",
+  "Please take care of your valuables & belongings. The management cannot accept any responsibility.",
+  "Parking solely at the owner's risk.",
+  "We undertake outdoor events and bulk orders. Kindly contact the restaurant manager for details."
+];
+
 export default function ManohaaFoodPlaza() {
-  const [lang, setLang] = useState<'en' | 'te' | 'hi'>('en');
   const [activeCat, setActiveCat] = useState("all");
   const [dietaryFilter, setDietaryFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -54,6 +68,7 @@ export default function ManohaaFoodPlaza() {
   const [menuItems, setMenuItems] = useState<Dish[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [showFullTerms, setShowFullTerms] = useState(false);
 
   // Review Modal State
   const [reviewModalOpen, setReviewModalOpen] = useState(false);
@@ -94,7 +109,6 @@ export default function ManohaaFoodPlaza() {
       return matchesCategory && matchesDietary;
     });
 
-    // Apply live search query filtering across items
     if (searchQuery.trim() !== "") {
       const q = searchQuery.toLowerCase();
       items = items.filter(item => item.name.toLowerCase().includes(q) || item.desc.toLowerCase().includes(q));
@@ -111,6 +125,19 @@ export default function ManohaaFoodPlaza() {
   const scrollToLocation = () => document.getElementById('location-section')?.scrollIntoView({ behavior: 'smooth' });
   const scrollToReviews = () => document.getElementById('reviews-section')?.scrollIntoView({ behavior: 'smooth' });
 
+  // SMART SEARCH SCROLL
+  const handleSearchEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = document.getElementById('menu-results-grid');
+      if (target) {
+        // Calculates exact position and subtracts 120px to prevent hiding behind the sticky header
+        const yOffset = target.getBoundingClientRect().top + window.scrollY - 120;
+        window.scrollTo({ top: yOffset, behavior: 'smooth' });
+      }
+    }
+  };
+
   const submitReview = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!custName.trim() || !custComment.trim()) return;
@@ -126,8 +153,14 @@ export default function ManohaaFoodPlaza() {
 
   const DetailedMenuCard = ({ item }: { item: Dish }) => (
     <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} whileHover={{ y: -4 }} className="group relative bg-white/85 backdrop-blur-xl rounded-[2rem] p-4 shadow-sm hover:shadow-2xl border border-white flex flex-col transition-all duration-300 overflow-hidden">
-      <div className="relative h-56 w-full rounded-2xl overflow-hidden mb-4 shadow-inner">
-        <img src={item.img} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" />
+      <div className="relative h-56 w-full rounded-2xl overflow-hidden mb-4 shadow-inner bg-gray-100 flex items-center justify-center">
+        {item.img ? (
+          <img src={item.img} alt={item.name} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700 ease-in-out" />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center group-hover:scale-110 transition-transform duration-700 ease-in-out">
+             <span className="font-serif italic text-gray-400 text-xl font-medium tracking-tight">S4 Manohaa</span>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
         {item.popular && <span className="absolute top-3 left-3 bg-white/95 backdrop-blur-md text-red-600 text-[10px] font-extrabold px-3 py-1.5 rounded-full shadow-md tracking-wider uppercase flex items-center gap-1"><Flame className="w-3 h-3" /> Bestseller</span>}
         <div className="absolute top-3 right-3 bg-white/95 backdrop-blur-md px-1.5 py-1.5 rounded-md shadow-sm">
@@ -200,6 +233,26 @@ export default function ManohaaFoodPlaza() {
             <h2 className="text-3xl font-serif font-bold text-gray-900 mb-2">{t.ourOfferings}</h2>
           </div>
 
+          {/* TERMS & CONDITIONS COLLAPSIBLE */}
+          <div className="mb-8 bg-white/70 backdrop-blur-md rounded-2xl p-5 sm:p-6 border border-gray-200 shadow-sm transition-all duration-300">
+            <div className="flex justify-between items-center mb-3">
+              <h3 className="font-sans font-bold text-sm uppercase tracking-widest text-gray-800 flex items-center gap-2">
+                <Info className="w-4 h-4 text-red-600" /> Terms & Conditions
+              </h3>
+              <button 
+                onClick={() => setShowFullTerms(!showFullTerms)} 
+                className="text-xs font-bold uppercase tracking-widest text-red-600 hover:text-red-800 transition-colors bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg"
+              >
+                {showFullTerms ? "Show Less" : "View All"}
+              </button>
+            </div>
+            <ul className="list-disc pl-5 space-y-2 text-sm text-gray-600 font-medium">
+              {(showFullTerms ? TERMS_AND_CONDITIONS : TERMS_AND_CONDITIONS.slice(0, 3)).map((term, idx) => (
+                <li key={idx}>{term}</li>
+              ))}
+            </ul>
+          </div>
+
           {/* SEARCH BAR INPUT UI ELEMENT */}
           <div className="mb-6 relative">
             <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-gray-400">
@@ -209,11 +262,13 @@ export default function ManohaaFoodPlaza() {
               type="text"
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchEnter}
               placeholder={t.searchPlaceholder}
-              className="w-full bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl pl-12 pr-4 py-4 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-600 transition-all font-medium placeholder:text-gray-400"
+              className="w-full bg-white/95 backdrop-blur-md border border-gray-200 rounded-2xl pl-12 pr-12 py-4 text-sm text-gray-900 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-600 transition-all font-medium placeholder:text-gray-400"
             />
             {searchQuery && (
               <button 
+                type="button"
                 onClick={() => setSearchQuery("")}
                 className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600"
               >
@@ -228,6 +283,7 @@ export default function ManohaaFoodPlaza() {
               <button key={tag} onClick={() => setDietaryFilter(tag)} className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${dietaryFilter === tag ? 'bg-red-600 text-white shadow-md' : 'bg-white/80 text-gray-600 border border-gray-200 hover:bg-white'}`}>{tag}</button>
             ))}
           </div>
+          
           <div className="flex justify-center flex-wrap gap-3 pb-8 mb-8 border-b border-gray-900/10">
             <button onClick={() => setActiveCat("all")} className={`px-7 py-3 rounded-2xl text-sm font-bold transition-all duration-300 ${activeCat === "all" ? 'bg-gray-900 text-white shadow-xl shadow-gray-900/20 scale-105' : 'bg-white/70 backdrop-blur-md text-gray-600 border border-white hover:bg-white hover:shadow-md'}`}>{t.allDelights}</button>
             {categories.map(cat => (
@@ -237,7 +293,8 @@ export default function ManohaaFoodPlaza() {
             ))}
           </div>
 
-          <div className="flex flex-col gap-12">
+          {/* CRITICAL: Target wrapper for keyboard Enter scrolling */}
+          <div id="menu-results-grid" className="flex flex-col gap-12 pt-4">
             {displayItems.length === 0 ? (
               <div className="text-center py-10 bg-white/50 rounded-3xl border border-white p-8">
                 <p className="text-gray-500 font-medium">No dishes match your request. Try adjusting your search query or filters!</p>

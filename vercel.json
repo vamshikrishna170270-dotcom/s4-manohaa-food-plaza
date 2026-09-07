@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/eod-report",
+      "schedule": "0 18 * * *" 
+    }
+  ]
+}
