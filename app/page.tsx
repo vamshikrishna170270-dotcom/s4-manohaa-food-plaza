@@ -131,7 +131,6 @@ export default function ManohaaFoodPlaza() {
       e.preventDefault();
       const target = document.getElementById('menu-results-grid');
       if (target) {
-        // Calculates exact position and subtracts 120px to prevent hiding behind the sticky header
         const yOffset = target.getBoundingClientRect().top + window.scrollY - 120;
         window.scrollTo({ top: yOffset, behavior: 'smooth' });
       }
@@ -293,7 +292,6 @@ export default function ManohaaFoodPlaza() {
             ))}
           </div>
 
-          {/* CRITICAL: Target wrapper for keyboard Enter scrolling */}
           <div id="menu-results-grid" className="flex flex-col gap-12 pt-4">
             {displayItems.length === 0 ? (
               <div className="text-center py-10 bg-white/50 rounded-3xl border border-white p-8">
@@ -389,7 +387,7 @@ export default function ManohaaFoodPlaza() {
                   <div>
                     <p className="text-xs text-gray-400 uppercase tracking-wider">Location</p>
                     <p className="text-sm font-medium text-white leading-relaxed mt-0.5">
-                      Near NH 44, Manoharabad / Medak Region, Telangana
+                      S4 Manohaa Food Plaza, NH44, Manoharabad, Hyderabad, Telangana 502334
                     </p>
                   </div>
                 </div>
@@ -397,7 +395,7 @@ export default function ManohaaFoodPlaza() {
 
               <div className="mt-8 pt-6 border-t border-white/10">
                 <a 
-                  href="https://maps.google.com/?q=Manoharabad+Medak" 
+                  href="https://www.google.com/maps/search/?api=1&query=S4+Manohaa+Food+Plaza+NH44+Manoharabad+Hyderabad+Telangana+502334" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="w-full py-4 rounded-2xl bg-red-600 text-white font-bold uppercase tracking-widest text-xs flex items-center justify-center gap-2 hover:bg-white hover:text-black transition-all shadow-lg"

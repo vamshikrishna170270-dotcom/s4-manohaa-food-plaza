@@ -91,10 +91,27 @@ type ChatKpi = {
   note?: string;
 };
 
+/* -------------------------------------------------------------------------- */
+/* NEW STRUCTURED TABLE TYPES                                                */
+/* -------------------------------------------------------------------------- */
+
+type ChatTableColumn = {
+  key: string;
+  label: string;
+  type?: "text" | "number" | "currency";
+};
+
+type ChatTable = {
+  title?: string;
+  columns: ChatTableColumn[];
+  rows: Record<string, unknown>[];
+};
+
 type ChatData = {
   title?: string;
   subtitle?: string;
   answer?: string;
+  sourceNote?: string;
   kpis?: ChatKpi[];
   topDishes?: ChatDish[];
   insights?: string[];
@@ -104,7 +121,65 @@ type ChatData = {
 type WorkspaceMessage = {
   role: "user" | "assistant";
   content: string;
+
+  /*
+   * Existing rich response support.
+   */
   data?: ChatData;
+
+  /*
+   * Structured response returned by /api/ai-analysis.
+   *
+   * Example:
+   *
+   * {
+   *   type: "table",
+   *   table: {
+   *     title: "Dish Performance",
+   *     columns: [...],
+   *     rows: [...]
+   *   }
+   * }
+   */
+  responseType?: "text" | "table";
+
+  table?: ChatTable;
+
+  summary?: {
+    totalDishes?: number;
+    totalUnits?: number;
+    totalRevenue?: number;
+    topDish?: string | null;
+  };
+};
+
+type VoiceRecognitionEvent = {
+  results: ArrayLike<
+    ArrayLike<{
+      transcript?: string;
+    }>
+  >;
+};
+
+type VoiceRecognition = {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  onstart: (() => void) | null;
+  onresult:
+    | ((event: VoiceRecognitionEvent) => void)
+    | null;
+  onerror: (() => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+};
+
+type VoiceRecognitionConstructor =
+  new () => VoiceRecognition;
+
+type VoiceRecognitionWindow = Window & {
+  SpeechRecognition?: VoiceRecognitionConstructor;
+  webkitSpeechRecognition?: VoiceRecognitionConstructor;
 };
 
 type ExpertReport = {
@@ -153,11 +228,8 @@ const MAX_PROMPT_LENGTH = 2000;
  * This avoids UTC conversion issues where late-night Indian time
  * can accidentally become the previous UTC date.
  */
-function localDateString(
-  date: Date,
-) {
-  const year =
-    date.getFullYear();
+function localDateString(date: Date) {
+  const year = date.getFullYear();
 
   const month = String(
     date.getMonth() + 1,
@@ -170,9 +242,7 @@ function localDateString(
   return `${year}-${month}-${day}`;
 }
 
-function startOfLocalDay(
-  date: Date,
-) {
+function startOfLocalDay(date: Date) {
   return new Date(
     date.getFullYear(),
     date.getMonth(),
@@ -184,9 +254,7 @@ function startOfLocalDay(
   );
 }
 
-function endOfLocalDay(
-  date: Date,
-) {
+function endOfLocalDay(date: Date) {
   return new Date(
     date.getFullYear(),
     date.getMonth(),
@@ -203,16 +271,14 @@ function getRangeStart(
 ) {
   const now = new Date();
 
-  const today =
-    startOfLocalDay(now);
+  const today = startOfLocalDay(now);
 
   switch (filter) {
     case "today":
       return today;
 
     case "7d": {
-      const date =
-        new Date(today);
+      const date = new Date(today);
 
       date.setDate(
         date.getDate() - 6,
@@ -222,8 +288,7 @@ function getRangeStart(
     }
 
     case "30d": {
-      const date =
-        new Date(today);
+      const date = new Date(today);
 
       date.setDate(
         date.getDate() - 29,
@@ -241,10 +306,12 @@ function getRangeStart(
 /* VALIDATION UTILITIES                                                       */
 /* -------------------------------------------------------------------------- */
 
-function isValidDateString(
-  value: string,
-) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+function isValidDateString(value: string) {
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      value,
+    )
+  ) {
     return false;
   }
 
@@ -270,14 +337,10 @@ export default function IntelligenceView({
   /* ------------------------------------------------------------------------ */
 
   const [activeTab, setActiveTab] =
-    useState<ActiveTab>(
-      "overview",
-    );
+    useState<ActiveTab>("overview");
 
   const [dateFilter, setDateFilter] =
-    useState<DateFilter>(
-      "30d",
-    );
+    useState<DateFilter>("30d");
 
   /*
    * Production UX:
@@ -292,66 +355,59 @@ export default function IntelligenceView({
 
   const [startDate, setStartDate] =
     useState(() => {
-      const date =
-        new Date();
+      const date = new Date();
 
       date.setDate(
         date.getDate() - 29,
       );
 
-      return localDateString(
-        date,
-      );
+      return localDateString(date);
     });
 
   const [endDate, setEndDate] =
     useState(() =>
-      localDateString(
-        new Date(),
-      ),
+      localDateString(new Date()),
     );
 
   /* ------------------------------------------------------------------------ */
   /* CHAT STATE                                                               */
   /* ------------------------------------------------------------------------ */
 
-  const [workspaceInput, setWorkspaceInput] =
-    useState("");
+  const [
+    workspaceInput,
+    setWorkspaceInput,
+  ] = useState("");
 
   const [
     workspaceMessages,
     setWorkspaceMessages,
-  ] = useState<WorkspaceMessage[]>(
-    [
-      {
-        role: "assistant",
-        content:
-          "Ask about revenue, orders, a dish, the best seller, or a management decision. I’ll answer only what you asked and keep the response scoped to the selected timeframe.",
-      },
-    ],
-  );
+  ] = useState<WorkspaceMessage[]>([
+    {
+      role: "assistant",
+      content:
+        "Ask about revenue, orders, a dish, the best seller, or a management decision. I’ll answer only what you asked and keep the response scoped to the selected timeframe.",
+    },
+  ]);
 
   const [
     isWorkspaceThinking,
     setIsWorkspaceThinking,
   ] = useState(false);
 
-  const [isListening, setIsListening] =
-    useState(false);
+  const [
+    isListening,
+    setIsListening,
+  ] = useState(false);
 
   /* ------------------------------------------------------------------------ */
   /* REFS                                                                     */
   /* ------------------------------------------------------------------------ */
 
   const workspaceEndRef =
-    useRef<HTMLDivElement | null>(
-      null,
-    );
+    useRef<HTMLDivElement | null>(null);
 
   const workspaceAbortRef =
-    useRef<AbortController | null>(
-      null,
-    );
+    useRef<AbortController | null>(null);
 
   /* ------------------------------------------------------------------------ */
   /* FILTERED LEDGER                                                          */
@@ -364,8 +420,7 @@ export default function IntelligenceView({
     let rangeEnd: Date;
 
     if (
-      dateFilter ===
-      "custom"
+      dateFilter === "custom"
     ) {
       /*
        * Protect against malformed manually-controlled values.
@@ -391,27 +446,25 @@ export default function IntelligenceView({
           .split("-")
           .map(Number);
 
-      rangeStart =
-        new Date(
-          sy,
-          sm - 1,
-          sd,
-          0,
-          0,
-          0,
-          0,
-        );
+      rangeStart = new Date(
+        sy,
+        sm - 1,
+        sd,
+        0,
+        0,
+        0,
+        0,
+      );
 
-      rangeEnd =
-        new Date(
-          ey,
-          em - 1,
-          ed,
-          23,
-          59,
-          59,
-          999,
-        );
+      rangeEnd = new Date(
+        ey,
+        em - 1,
+        ed,
+        23,
+        59,
+        59,
+        999,
+      );
     } else {
       rangeStart =
         getRangeStart(
@@ -419,9 +472,7 @@ export default function IntelligenceView({
         );
 
       rangeEnd =
-        endOfLocalDay(
-          now,
-        );
+        endOfLocalDay(now);
     }
 
     const startMs =
@@ -440,9 +491,7 @@ export default function IntelligenceView({
 
     return ledger.filter(
       (entry) => {
-        if (
-          !entry?.created_at
-        ) {
+        if (!entry?.created_at) {
           return false;
         }
 
@@ -460,8 +509,7 @@ export default function IntelligenceView({
         }
 
         return (
-          timestamp >=
-            startMs &&
+          timestamp >= startMs &&
           timestamp <= endMs
         );
       },
@@ -512,9 +560,7 @@ export default function IntelligenceView({
       }
 
       const rawQuantity =
-        Number(
-          entry.quantity,
-        );
+        Number(entry.quantity);
 
       /*
        * If quantity is missing, assume one.
@@ -522,8 +568,7 @@ export default function IntelligenceView({
        * If it is invalid, also assume one.
        */
       const quantity =
-        entry.quantity !=
-          null &&
+        entry.quantity != null &&
         Number.isFinite(
           rawQuantity,
         )
@@ -559,10 +604,8 @@ export default function IntelligenceView({
       map,
     ).sort(
       (a, b) =>
-        b.revenue -
-          a.revenue ||
-        b.quantity -
-          a.quantity,
+        b.revenue - a.revenue ||
+        b.quantity - a.quantity,
     );
   }, [
     filteredLedger,
@@ -608,8 +651,7 @@ export default function IntelligenceView({
      * The UI explicitly identifies this as estimated.
      */
     const totalOrders =
-      distinctOrderIds.size >
-      0
+      distinctOrderIds.size > 0
         ? distinctOrderIds.size
         : filteredLedger.length;
 
@@ -647,8 +689,7 @@ export default function IntelligenceView({
       unitsPerOrder,
 
       orderCountEstimated:
-        distinctOrderIds.size ===
-        0,
+        distinctOrderIds.size === 0,
     };
   }, [
     dishBreakdown,
@@ -664,10 +705,8 @@ export default function IntelligenceView({
       () => {
         if (
           !dishBreakdown.length &&
-          metrics.totalOrders ===
-            0 &&
-          metrics.grossRevenue ===
-            0
+          metrics.totalOrders === 0 &&
+          metrics.grossRevenue === 0
         ) {
           return null;
         }
@@ -685,14 +724,11 @@ export default function IntelligenceView({
           [];
 
         const timeframeLabel =
-          dateFilter ===
-          "today"
+          dateFilter === "today"
             ? "Today"
-            : dateFilter ===
-                "7d"
+            : dateFilter === "7d"
               ? "the last 7 days"
-              : dateFilter ===
-                  "30d"
+              : dateFilter === "30d"
                 ? "the last 30 days"
                 : `${startDate} to ${endDate}`;
 
@@ -701,7 +737,9 @@ export default function IntelligenceView({
           0
         ) {
           summary.push(
-            `${timeframeLabel} generated ${inr(metrics.grossRevenue)} in revenue across ${metrics.totalOrders} orders.`,
+            `${timeframeLabel} generated ${inr(
+              metrics.grossRevenue,
+            )} in revenue across ${metrics.totalOrders} orders.`,
           );
         }
 
@@ -718,7 +756,11 @@ export default function IntelligenceView({
           0
         ) {
           summary.push(
-            `Average order value is ${inr(metrics.averageOrderValue)} with ${metrics.unitsPerOrder.toFixed(2)} units per order.`,
+            `Average order value is ${inr(
+              metrics.averageOrderValue,
+            )} with ${metrics.unitsPerOrder.toFixed(
+              2,
+            )} units per order.`,
           );
         }
 
@@ -729,27 +771,27 @@ export default function IntelligenceView({
           `${metrics.totalUnits} units were sold during ${timeframeLabel}.`,
         );
 
-        const revenueLeader =
-          [
-            ...dishBreakdown,
-          ].sort(
-            (a, b) =>
-              b.revenue -
-              a.revenue,
-          )[0];
+        const revenueLeader = [
+          ...dishBreakdown,
+        ].sort(
+          (a, b) =>
+            b.revenue -
+            a.revenue,
+        )[0];
 
         if (
           revenueLeader
         ) {
           whatChanged.push(
-            `${revenueLeader.name} is the highest-revenue dish at ${inr(revenueLeader.revenue)}.`,
+            `${revenueLeader.name} is the highest-revenue dish at ${inr(
+              revenueLeader.revenue,
+            )}.`,
           );
         }
 
         if (
           metrics.bestSeller &&
-          metrics.grossRevenue >
-            0
+          metrics.grossRevenue > 0
         ) {
           const bestSellerShare =
             (metrics.bestSeller
@@ -758,23 +800,23 @@ export default function IntelligenceView({
             100;
 
           if (
-            bestSellerShare >=
-            25
+            bestSellerShare >= 25
           ) {
             attention.push(
-              `${metrics.bestSeller.name} contributes ${bestSellerShare.toFixed(1)}% of total revenue, so maintaining its availability is important.`,
+              `${metrics.bestSeller.name} contributes ${bestSellerShare.toFixed(
+                1,
+              )}% of total revenue, so maintaining its availability is important.`,
             );
           }
         }
 
-        const lowestRevenueDish =
-          [
-            ...dishBreakdown,
-          ].sort(
-            (a, b) =>
-              a.revenue -
-              b.revenue,
-          )[0];
+        const lowestRevenueDish = [
+          ...dishBreakdown,
+        ].sort(
+          (a, b) =>
+            a.revenue -
+            b.revenue,
+        )[0];
 
         if (
           lowestRevenueDish
@@ -797,29 +839,26 @@ export default function IntelligenceView({
           0
         ) {
           recommendations.push(
-            `Use bundles and add-ons to increase the current ${inr(metrics.averageOrderValue)} average order value.`,
+            `Use bundles and add-ons to increase the current ${inr(
+              metrics.averageOrderValue,
+            )} average order value.`,
           );
         }
 
         if (
-          dishBreakdown.length >
-          1
+          dishBreakdown.length > 1
         ) {
-          const topTwo =
-            [
-              ...dishBreakdown,
-            ].sort(
-              (a, b) =>
-                b.revenue -
-                a.revenue,
-            );
+          const topTwo = [
+            ...dishBreakdown,
+          ].sort(
+            (a, b) =>
+              b.revenue -
+              a.revenue,
+          );
 
           recommendations.push(
             `Prioritize ${topTwo
-              .slice(
-                0,
-                2,
-              )
+              .slice(0, 2)
               .map(
                 (dish) =>
                   dish.name,
@@ -832,22 +871,13 @@ export default function IntelligenceView({
 
         return {
           summary:
-            summary.slice(
-              0,
-              4,
-            ),
+            summary.slice(0, 4),
 
           whatChanged:
-            whatChanged.slice(
-              0,
-              3,
-            ),
+            whatChanged.slice(0, 3),
 
           attention:
-            attention.slice(
-              0,
-              3,
-            ),
+            attention.slice(0, 3),
 
           recommendations:
             recommendations.slice(
@@ -904,15 +934,14 @@ export default function IntelligenceView({
           ) => string),
     ) => void,
   ) => {
-    const SpeechRecognition =
-      (window as any)
-        .SpeechRecognition ||
-      (window as any)
-        .webkitSpeechRecognition;
+    const speechWindow =
+      window as VoiceRecognitionWindow;
 
-    if (
-      !SpeechRecognition
-    ) {
+    const SpeechRecognition =
+      speechWindow.SpeechRecognition ||
+      speechWindow.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
       alert(
         "Voice recognition is not supported in this browser.",
       );
@@ -928,39 +957,37 @@ export default function IntelligenceView({
     recognition.interimResults =
       false;
 
-    recognition.lang =
-      "en-IN";
+    recognition.lang = "en-IN";
 
-    recognition.onstart =
-      () => {
-        setIsListening(true);
-      };
+    recognition.onstart = () => {
+      setIsListening(true);
+    };
 
-    recognition.onresult =
-      (event: any) => {
-        const transcript =
-          event?.results?.[0]?.[0]
-            ?.transcript
-            ?.trim();
+    recognition.onresult = (
+      event: VoiceRecognitionEvent,
+    ) => {
+      const transcript =
+        event?.results?.[0]?.[0]
+          ?.transcript
+          ?.trim();
 
-        if (!transcript) {
-          return;
-        }
+      if (!transcript) {
+        return;
+      }
 
-        setInputMethod(
-          (
-            previous: string,
-          ) =>
-            previous
-              ? `${previous} ${transcript}`
-              : transcript,
-        );
-      };
+      setInputMethod(
+        (
+          previous: string,
+        ) =>
+          previous
+            ? `${previous} ${transcript}`
+            : transcript,
+      );
+    };
 
-    recognition.onerror =
-      () => {
-        setIsListening(false);
-      };
+    recognition.onerror = () => {
+      setIsListening(false);
+    };
 
     recognition.onend = () => {
       setIsListening(false);
@@ -981,7 +1008,9 @@ export default function IntelligenceView({
     const prompt =
       workspaceInput.trim();
 
-    if (!prompt) return;
+    if (!prompt) {
+      return;
+    }
 
     if (
       isWorkspaceThinking
@@ -1044,6 +1073,16 @@ export default function IntelligenceView({
           }),
         );
 
+    /*
+     * Backend expects timeframe.
+     *
+     * Custom dates are also sent separately in range.
+     */
+    const backendTimeframe =
+      dateFilter === "custom"
+        ? "30d"
+        : dateFilter;
+
     try {
       const response =
         await fetch(
@@ -1059,56 +1098,29 @@ export default function IntelligenceView({
             signal:
               controller.signal,
 
-            body: JSON.stringify(
-              {
-                mode: "chat",
+            body: JSON.stringify({
+              mode: "chat",
 
-                userPrompt:
-                  boundedPrompt,
+              userPrompt:
+                boundedPrompt,
 
-                history,
+              history,
 
-                metrics: {
-                  current: {
-                    rev: metrics.grossRevenue,
+              timeframe:
+                backendTimeframe,
 
-                    orders:
-                      metrics.totalOrders,
-
-                    topDish:
-                      metrics
-                        .bestSeller
-                        ?.name,
-
-                    topDishVol:
-                      metrics
-                        .bestSeller
-                        ?.quantity,
-
-                    units:
-                      metrics.totalUnits,
-
-                    averageOrderValue:
-                      metrics.averageOrderValue,
-
-                    unitsPerOrder:
-                      metrics.unitsPerOrder,
-                  },
-
-                  dishes:
-                    dishBreakdown.slice(
-                      0,
-                      50,
-                    ),
-                },
-
-                timeframe:
-                  dateFilter ===
-                  "custom"
-                    ? `${startDate} to ${endDate}`
-                    : dateFilter,
-              },
-            ),
+              range:
+                dateFilter ===
+                "custom"
+                  ? {
+                      kind: "custom",
+                      startDate,
+                      endDate,
+                    }
+                  : {
+                      kind: dateFilter,
+                    },
+            }),
           },
         );
 
@@ -1118,7 +1130,7 @@ export default function IntelligenceView({
         );
       }
 
-      const data =
+      const responseData =
         await response.json();
 
       if (
@@ -1133,23 +1145,60 @@ export default function IntelligenceView({
           ...previous,
           {
             role: "assistant",
+
             content:
-              data.reply ||
+              responseData.reply ||
               "I couldn't generate a response from the available data.",
 
+            /*
+             * Existing rich data support.
+             */
             data:
-              data.data &&
-              typeof data.data ===
+              responseData.data &&
+              typeof responseData.data ===
                 "object"
-                ? data.data
+                ? responseData.data
+                : undefined,
+
+            /*
+             * NEW:
+             * Save structured response type.
+             */
+            responseType:
+              responseData.type ===
+              "table"
+                ? "table"
+                : "text",
+
+            /*
+             * NEW:
+             * Save the actual structured table.
+             */
+            table:
+              responseData.table &&
+              typeof responseData.table ===
+                "object"
+                ? responseData.table
+                : undefined,
+
+            /*
+             * Optional summary information.
+             */
+            summary:
+              responseData.summary &&
+              typeof responseData.summary ===
+                "object"
+                ? responseData.summary
                 : undefined,
           },
         ],
       );
-    } catch (error: any) {
+    } catch (error: unknown) {
       if (
-        error?.name ===
-        "AbortError"
+        error instanceof
+          DOMException &&
+        error.name ===
+          "AbortError"
       ) {
         return;
       }
@@ -1188,9 +1237,7 @@ export default function IntelligenceView({
   const setDate = (
     nextDate: DateFilter,
   ) => {
-    setDateFilter(
-      nextDate,
-    );
+    setDateFilter(nextDate);
 
     /*
      * As soon as a valid timeframe is selected,
@@ -1205,9 +1252,7 @@ export default function IntelligenceView({
     value: string,
   ) => {
     if (
-      !isValidDateString(
-        value,
-      )
+      !isValidDateString(value)
     ) {
       return;
     }
@@ -1232,16 +1277,12 @@ export default function IntelligenceView({
     value: string,
   ) => {
     if (
-      !isValidDateString(
-        value,
-      )
+      !isValidDateString(value)
     ) {
       return;
     }
 
-    if (
-      value < startDate
-    ) {
+    if (value < startDate) {
       return;
     }
 
@@ -1249,8 +1290,7 @@ export default function IntelligenceView({
   };
 
   const isCustomRangeInvalid =
-    dateFilter ===
-      "custom" &&
+    dateFilter === "custom" &&
     (!isValidDateString(
       startDate,
     ) ||
@@ -1260,7 +1300,210 @@ export default function IntelligenceView({
       endDate < startDate);
 
   /* ------------------------------------------------------------------------ */
-  /* CHAT DATA RENDERER                                                       */
+  /* STRUCTURED AI TABLE RENDERER                                             */
+  /* ------------------------------------------------------------------------ */
+
+  const renderWorkspaceTable = (
+    table?: ChatTable,
+  ) => {
+    if (
+      !table ||
+      !Array.isArray(
+        table.columns,
+      ) ||
+      !Array.isArray(table.rows)
+    ) {
+      return null;
+    }
+
+    if (!table.columns.length) {
+      return null;
+    }
+
+    return (
+      <div className="mt-4 w-full overflow-hidden rounded-2xl border border-white/10 bg-black/20 shadow-xl">
+        {/* Table Header */}
+        {table.title && (
+          <div className="flex items-center justify-between border-b border-white/5 bg-white/[0.025] px-4 py-3 sm:px-5 sm:py-4">
+            <div>
+              <h3 className="text-sm font-bold text-white">
+                {table.title}
+              </h3>
+
+              <p className="mt-0.5 text-[10px] uppercase tracking-[0.14em] text-zinc-600">
+                AI database report
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-white/5 bg-white/[0.025] px-2.5 py-1 text-[10px] font-semibold text-zinc-500">
+              {table.rows.length}{" "}
+              {table.rows.length ===
+              1
+                ? "item"
+                : "items"}
+            </div>
+          </div>
+        )}
+
+        {/* Horizontal scrolling on small screens */}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[680px] border-collapse">
+            <thead>
+              <tr className="border-b border-white/10 bg-white/[0.02]">
+                {/* Ranking column */}
+                <th className="w-16 px-4 py-3 text-left text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600 sm:px-5">
+                  #
+                </th>
+
+                {table.columns.map(
+                  (column) => (
+                    <th
+                      key={
+                        column.key
+                      }
+                      className={`px-4 py-3 text-left text-[9px] font-bold uppercase tracking-[0.16em] text-zinc-600 sm:px-5 ${
+                        column.type ===
+                          "number" ||
+                        column.type ===
+                          "currency"
+                          ? "text-right"
+                          : ""
+                      }`}
+                    >
+                      {
+                        column.label
+                      }
+                    </th>
+                  ),
+                )}
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-white/5">
+              {table.rows.map(
+                (
+                  row,
+                  rowIndex,
+                ) => (
+                  <tr
+                    key={
+                      rowIndex
+                    }
+                    className="transition-colors hover:bg-white/[0.03]"
+                  >
+                    {/* Rank */}
+                    <td className="px-4 py-3.5 font-mono text-[10px] text-zinc-700 sm:px-5">
+                      {rowIndex +
+                        1}
+                    </td>
+
+                    {table.columns.map(
+                      (column) => {
+                        const value =
+                          row[
+                            column.key
+                          ];
+
+                        let displayValue =
+                          "";
+
+                        if (
+                          column.type ===
+                          "currency"
+                        ) {
+                          const numericValue =
+                            Number(
+                              value ??
+                                0,
+                            );
+
+                          displayValue =
+                            inr(
+                              Number.isFinite(
+                                numericValue,
+                              )
+                                ? numericValue
+                                : 0,
+                            );
+                        } else if (
+                          column.type ===
+                          "number"
+                        ) {
+                          const numericValue =
+                            Number(
+                              value ??
+                                0,
+                            );
+
+                          displayValue =
+                            Number.isFinite(
+                              numericValue,
+                            )
+                              ? numericValue.toLocaleString(
+                                  "en-IN",
+                                )
+                              : "0";
+                        } else {
+                          displayValue =
+                            value == null
+                              ? "—"
+                              : String(
+                                  value,
+                                );
+                        }
+
+                        const isNumeric =
+                          column.type ===
+                            "number" ||
+                          column.type ===
+                            "currency";
+
+                        return (
+                          <td
+                            key={
+                              column.key
+                            }
+                            className={`px-4 py-3.5 text-sm sm:px-5 ${
+                              isNumeric
+                                ? "text-right font-mono"
+                                : ""
+                            } ${
+                              column.type ===
+                              "currency"
+                                ? "font-bold text-emerald-400"
+                                : column.type ===
+                                    "number"
+                                  ? "text-zinc-300"
+                                  : "font-medium text-zinc-200"
+                            }`}
+                          >
+                            {
+                              displayValue
+                            }
+                          </td>
+                        );
+                      },
+                    )}
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Empty state */}
+        {!table.rows.length && (
+          <div className="px-6 py-12 text-center text-xs text-zinc-600">
+            No matching data was found
+            for this timeframe.
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  /* ------------------------------------------------------------------------ */
+  /* EXISTING CHAT DATA RENDERER                                              */
   /* ------------------------------------------------------------------------ */
 
   const renderChatData = (
@@ -1471,6 +1714,12 @@ export default function IntelligenceView({
             </div>
           </div>
         )}
+
+        {data.sourceNote && (
+          <p className="rounded-lg border border-white/5 bg-black/10 px-3 py-2 text-[10px] leading-5 text-zinc-500">
+            {data.sourceNote}
+          </p>
+        )}
       </div>
     );
   };
@@ -1644,9 +1893,7 @@ export default function IntelligenceView({
                           return;
                         }
 
-                        setDate(
-                          id,
-                        );
+                        setDate(id);
                       }}
                       className={`
                         relative shrink-0 rounded-lg px-3 py-1.5
@@ -1811,9 +2058,7 @@ export default function IntelligenceView({
                       index,
                     ) => (
                       <div
-                        key={
-                          index
-                        }
+                        key={index}
                         className={`flex gap-3 sm:gap-4 ${
                           message.role ===
                           "user"
@@ -1852,11 +2097,89 @@ export default function IntelligenceView({
                             message.content
                           ) : (
                             <>
+                              {/* AI response text */}
                               <p className="leading-relaxed text-zinc-300">
                                 {
                                   message.content
                                 }
                               </p>
+
+                              {/* ------------------------------------------------ */}
+                              {/* NEW STRUCTURED TABLE                            */}
+                              {/* ------------------------------------------------ */}
+
+                              {message.responseType ===
+                                "table" &&
+                                renderWorkspaceTable(
+                                  message.table,
+                                )}
+
+                              {/* ------------------------------------------------ */}
+                              {/* OPTIONAL SUMMARY KPIs                          */}
+                              {/* ------------------------------------------------ */}
+
+                              {message.responseType ===
+                                "table" &&
+                                message.summary && (
+                                  <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                                    {typeof message
+                                      .summary
+                                      .totalUnits ===
+                                      "number" && (
+                                      <div className="rounded-xl border border-white/5 bg-white/[0.015] p-3">
+                                        <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                                          Total Units
+                                        </p>
+
+                                        <p className="mt-1 text-lg font-bold text-white">
+                                          {message.summary.totalUnits.toLocaleString(
+                                            "en-IN",
+                                          )}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {typeof message
+                                      .summary
+                                      .totalRevenue ===
+                                      "number" && (
+                                      <div className="rounded-xl border border-white/5 bg-white/[0.015] p-3">
+                                        <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                                          Total Revenue
+                                        </p>
+
+                                        <p className="mt-1 text-lg font-bold text-emerald-400">
+                                          {inr(
+                                            message
+                                              .summary
+                                              .totalRevenue,
+                                          )}
+                                        </p>
+                                      </div>
+                                    )}
+
+                                    {message.summary
+                                      .topDish && (
+                                      <div className="rounded-xl border border-white/5 bg-white/[0.015] p-3">
+                                        <p className="text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-600">
+                                          Top Dish
+                                        </p>
+
+                                        <p className="mt-1 truncate text-sm font-bold text-amber-400">
+                                          {
+                                            message
+                                              .summary
+                                              .topDish
+                                          }
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                              {/* ------------------------------------------------ */}
+                              {/* EXISTING RICH DATA                             */}
+                              {/* ------------------------------------------------ */}
 
                               {renderChatData(
                                 message.data,
@@ -2350,10 +2673,8 @@ export default function IntelligenceView({
                                 >
                                   <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-amber-400/10">
                                     <span className="text-[10px] font-bold text-amber-400">
-                                      {
-                                        index +
-                                          1
-                                      }
+                                      {index +
+                                        1}
                                     </span>
                                   </div>
 
@@ -2448,9 +2769,7 @@ function ReportSection({
                   />
 
                   <span>
-                    {
-                      sentence
-                    }
+                    {sentence}
                   </span>
                 </p>
               ),
